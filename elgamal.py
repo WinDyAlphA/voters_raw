@@ -1,4 +1,4 @@
-from algebra import mod_inv, int_to_bytes
+from backend.crypto_utils.algebra import mod_inv, int_to_bytes
 from secrets import randbelow
 from typing import Tuple
 

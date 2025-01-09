@@ -1,4 +1,4 @@
-from algebra import mod_inv
+from backend.crypto_utils.algebra import mod_inv
 from Crypto.Hash import SHA256
 from secrets import randbelow
 from typing import Tuple

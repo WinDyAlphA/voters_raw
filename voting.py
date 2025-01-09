@@ -2,8 +2,8 @@ from typing import List, Tuple, Dict
 from dataclasses import dataclass
 from secrets import randbelow
 import json
-from rfc7748 import add
-from algebra import int_to_bytes
+from backend.crypto_utils.rfc7748 import add
+from backend.crypto_utils.algebra import int_to_bytes
 
 from ecelgamal import (
     ECEG_generate_keys, ECEG_encrypt, ECEG_decrypt,

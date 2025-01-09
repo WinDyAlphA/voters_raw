@@ -1,5 +1,5 @@
-from rfc7748 import x25519, add, sub, mult
-from algebra import mod_inv, int_to_bytes, mod_sqrt
+from backend.crypto_utils.rfc7748 import x25519, add, sub, mult
+from backend.crypto_utils.algebra import mod_inv, int_to_bytes, mod_sqrt
 from secrets import randbelow
 from typing import Tuple, Optional
 
