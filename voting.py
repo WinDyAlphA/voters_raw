@@ -63,10 +63,18 @@ class VotingSystem:
         """Crée un vote pour un candidat (liste de 0 et 1)"""
         if not 0 <= candidate < NUM_CANDIDATES:
             raise ValueError("Candidat invalide")
-        return [1 if i == candidate else 0 for i in range(NUM_CANDIDATES)]
+        # Vérifie que le vote est valide (un seul 1, le reste des 0)
+        vote = [1 if i == candidate else 0 for i in range(NUM_CANDIDATES)]
+        if sum(vote) != 1:
+            raise ValueError("Vote invalide: un seul candidat doit être choisi")
+        return vote
 
     def encrypt_vote(self, vote_list: List[int], voter_id: int) -> Ballot:
         """Chiffre et signe un vote"""
+        # Vérifie que la somme des votes est égale à 1
+        if sum(vote_list) != 1:
+            raise ValueError("Vote invalide: la somme doit être égale à 1")
+
         # Chiffre chaque élément du vote
         encrypted_votes = []
         for vote in vote_list:
@@ -163,6 +171,11 @@ class VotingSystem:
             else:
                 decrypted = EG_decrypt(self.priv_key, encrypted[0], encrypted[1])
                 results.append(decrypted)
+        
+        # Vérifie que le nombre total de votes est égal au nombre de votants
+        total_votes = sum(results)
+        if total_votes != NUM_VOTERS:
+            raise ValueError(f"Nombre total de votes ({total_votes}) différent du nombre de votants ({NUM_VOTERS})")
                 
         return results
 
