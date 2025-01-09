@@ -1,7 +1,7 @@
-from backend.crypto_utils.rfc7748 import x25519, add, computeVcoordinate, mult
+from crypto_utils.rfc7748 import x25519, add, computeVcoordinate, mult
 from Crypto.Hash import SHA256
 from secrets import randbelow
-from backend.crypto_utils.algebra import mod_inv
+from crypto_utils.algebra import mod_inv
 from typing import Tuple
 
 # Paramètres de la courbe
@@ -51,7 +51,7 @@ def ECDSA_generate_nonce(private_key: int, message: bytes, order: int = ORDER) -
         En production, utiliser RFC 6979 pour la génération déterministe du nonce
     """
     # En production, implémenter RFC 6979
-    k = randbelow(order-1) + 1
+    k = randbelow(order-2) + 1
     return k
 
 def ECDSA_generate_keys(p: int = p) -> Tuple[int, Tuple[int, int]]:
@@ -69,7 +69,7 @@ def ECDSA_generate_keys(p: int = p) -> Tuple[int, Tuple[int, int]]:
         ValueError: Si les paramètres sont invalides
     """
     # Génère une clé privée dans [1, ORDER-1]
-    private_key = randbelow(ORDER-1) + 1
+    private_key = randbelow(ORDER-2) + 1
     
     # Calcule la clé publique Q = d*G
     public_key = mult(private_key, BaseU, BaseV, p)

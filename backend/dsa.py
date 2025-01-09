@@ -1,4 +1,4 @@
-from backend.crypto_utils.algebra import mod_inv
+from crypto_utils.algebra import mod_inv
 from Crypto.Hash import SHA256
 from secrets import randbelow
 from typing import Tuple
@@ -53,7 +53,7 @@ def DSA_generate_nonce(private_key: int, message: bytes, q: int = PARAM_Q) -> in
     """
     # En production, il faudrait implémenter RFC 6979
     # Cette implémentation n'est pas recommandée pour la production
-    k = randbelow(q-1) + 1
+    k = randbelow(q-2) + 1
     return k
 
 def DSA_generate_keys(p: int = PARAM_P, q: int = PARAM_Q, g: int = PARAM_G) -> Tuple[int, int]:
@@ -75,7 +75,7 @@ def DSA_generate_keys(p: int = PARAM_P, q: int = PARAM_Q, g: int = PARAM_G) -> T
         raise ValueError("Paramètres DSA invalides")
     
     # Génère la clé privée x dans [1, q-1]
-    private_key = randbelow(q-1) + 1
+    private_key = randbelow(q-2) + 1
     
     # Calcule la clé publique y = g^x mod p
     public_key = pow(g, private_key, p)

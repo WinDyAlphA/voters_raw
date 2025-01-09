@@ -1,4 +1,4 @@
-from backend.crypto_utils.algebra import mod_inv, int_to_bytes
+from crypto_utils.algebra import mod_inv, int_to_bytes
 from secrets import randbelow
 from typing import Tuple
 
@@ -45,7 +45,7 @@ def EG_generate_keys(p: int = PARAM_P, g: int = PARAM_G) -> Tuple[int, int]:
         raise ValueError("Paramètres du groupe invalides")
     
     # Génère une clé privée aléatoire dans [1, q-1]
-    private_key = randbelow(PARAM_Q-1) + 1
+    private_key = randbelow(PARAM_Q-2) + 1
     
     # Calcule la clé publique h = g^x mod p
     public_key = pow(g, private_key, p)
@@ -78,7 +78,7 @@ def EGM_encrypt(message: int, public_key: int, p: int = PARAM_P, g: int = PARAM_
     encoded = 1 if message == 0 else g
     
     # Génère un nombre aléatoire k
-    k = randbelow(PARAM_Q-1) + 1
+    k = randbelow(PARAM_Q-2) + 1
     
     # Calcule c1 = g^k mod p
     c1 = pow(g, k, p)
@@ -131,4 +131,95 @@ def EG_decrypt(private_key: int, c1: int, c2: int, p: int = PARAM_P) -> int:
         if temp == m:
             return count
         raise ValueError("Déchiffrement invalide")
+
+def EGA_encrypt(message: int, public_key: int, p: int = PARAM_P, g: int = PARAM_G) -> Tuple[int, int]:
+    """
+    Chiffre un message avec ElGamal (version additive)
+    
+    Args:
+        message: Le message à chiffrer (doit être petit par rapport à p)
+        public_key: La clé publique du destinataire
+        p: Le module premier
+        g: Le générateur du groupe
+        
+    Returns:
+        Tuple[int, int]: (c1, c2) le texte chiffré
+        
+    Raises:
+        ValueError: Si les paramètres ou le message sont invalides
+    """
+    if not validate_params():
+        raise ValueError("Paramètres du groupe invalides")
+    
+    if message < 0:
+        raise ValueError("Message doit être positif")
+    
+    # Encode le message comme g^m
+    encoded = pow(g, message, p)
+    
+    # Génère un nombre aléatoire k
+    k = randbelow(PARAM_Q-2) + 1
+    
+    # Calcule c1 = g^k mod p
+    c1 = pow(g, k, p)
+    
+    # Calcule c2 = g^m * y^k mod p
+    c2 = (encoded * pow(public_key, k, p)) % p
+    
+    return c1, c2
+
+def EGA_decrypt(private_key: int, c1: int, c2: int, p: int = PARAM_P, g: int = PARAM_G) -> int:
+    """
+    Déchiffre un message avec ElGamal (version additive) en utilisant
+    l'algorithme baby-step giant-step pour le logarithme discret
+    
+    Args:
+        private_key: La clé privée
+        c1, c2: Le texte chiffré
+        p: Le module premier
+        g: Le générateur du groupe
+        
+    Returns:
+        int: Le message déchiffré
+        
+    Raises:
+        ValueError: Si les paramètres ou le chiffré sont invalides
+    """
+    if not validate_params():
+        raise ValueError("Paramètres du groupe invalides")
+    
+    if not 0 < private_key < PARAM_Q:
+        raise ValueError("Clé privée invalide")
+    
+    # Calcule s = c1^x mod p
+    s = pow(c1, private_key, p)
+    
+    # Calcule g^m = c2 * s^(-1) mod p
+    s_inv = mod_inv(s, p)
+    g_m = (c2 * s_inv) % p
+    
+    # Résout le logarithme discret avec baby-step giant-step
+    # On cherche m tel que g^m = g_m mod p
+    
+    # Calcule la racine carrée de l'ordre du groupe
+    m = int(PARAM_Q ** 0.5) + 1
+    
+    # Baby steps: stocke g^j dans une table
+    baby_steps = {}
+    value = 1
+    for j in range(m):
+        baby_steps[value] = j
+        value = (value * g) % p
+    
+    # Facteur pour les giant steps
+    factor = pow(g, m * (p-2), p)  # g^(-m) mod p
+    
+    # Giant steps: cherche une correspondance
+    value = g_m
+    for i in range(m):
+        if value in baby_steps:
+            return i * m + baby_steps[value]
+        value = (value * factor) % p
+    
+    raise ValueError("Déchiffrement invalide: logarithme discret non trouvé")
 

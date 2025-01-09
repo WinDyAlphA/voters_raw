@@ -1,5 +1,5 @@
-from backend.crypto_utils.rfc7748 import x25519, add, sub, mult
-from backend.crypto_utils.algebra import mod_inv, int_to_bytes, mod_sqrt
+from crypto_utils.rfc7748 import x25519, add, sub, mult
+from crypto_utils.algebra import mod_inv, int_to_bytes, mod_sqrt
 from secrets import randbelow
 from typing import Tuple, Optional
 
@@ -73,7 +73,7 @@ def ECEG_generate_keys(p: int = p) -> Tuple[int, Tuple[int, int]]:
         ValueError: Si les paramètres sont invalides
     """
     # Génère une clé privée aléatoire dans [1, ORDER-1]
-    private_key = randbelow(ORDER-1) + 1
+    private_key = randbelow(ORDER-2) + 1
     
     # Calcule la clé publique H = private_key * G
     public_key = mult(private_key, BaseU, BaseV, p)
@@ -103,7 +103,7 @@ def ECEG_encrypt(message: int, public_key: Tuple[int, int], p: int = p) -> Tuple
     M = EGencode(message)
     
     # Génère un nombre aléatoire k cryptographiquement sûr
-    k = randbelow(ORDER-1) + 1
+    k = randbelow(ORDER-2) + 1
     
     # Calcule C1 = k*G
     C1 = mult(k, BaseU, BaseV, p)
