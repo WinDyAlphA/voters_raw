@@ -1,4 +1,4 @@
-from rfc7448 import x25519, add, sub, mult
+from rfc7748 import x25519, add, sub, mult
 from algebra import mod_inv, int_to_bytes, mod_sqrt
 from secrets import randbelow
 from typing import Tuple, Optional
@@ -95,9 +95,6 @@ def ECEG_encrypt(message: int, public_key: Tuple[int, int], p: int = p) -> Tuple
         
     Returns:
         Tuple[Tuple[int, int], Tuple[int, int]]: (C1, C2) les points chiffrés
-        
-    Raises:
-        ValueError: Si le message ou la clé publique sont invalides
     """
     if not validate_point(public_key[0], public_key[1], p):
         raise ValueError("Clé publique invalide")
@@ -122,17 +119,6 @@ def ECEG_encrypt(message: int, public_key: Tuple[int, int], p: int = p) -> Tuple
 def ECEG_decrypt(private_key: int, C1: Tuple[int, int], C2: Tuple[int, int], p: int = p) -> int:
     """
     Déchiffre un message avec EC-ElGamal
-    
-    Args:
-        private_key: La clé privée
-        C1, C2: Les points chiffrés
-        p: Le module premier
-        
-    Returns:
-        int: Le message déchiffré (0 ou 1)
-        
-    Raises:
-        ValueError: Si les paramètres ou le chiffré sont invalides
     """
     # Vérifie que les points chiffrés sont sur la courbe
     if not validate_point(C1[0], C1[1], p) or not validate_point(C2[0], C2[1], p):
@@ -151,11 +137,25 @@ def ECEG_decrypt(private_key: int, C1: Tuple[int, int], C2: Tuple[int, int], p: 
     # Calcule M = C2 - S
     M = add(C2[0], C2[1], neg_S[0], neg_S[1], p)
     
-    # Décode le point en message
-    if M == (1, 0):
-        return 0
-    elif M == (BaseU, BaseV):
-        return 1
-    else:
-        raise ValueError("Déchiffrement invalide")
+    # Décode le point en message de manière plus robuste
+    if validate_point(M[0], M[1], p):
+        if M == (1, 0):
+            return 0
+        elif M[0] == BaseU and M[1] == BaseV:
+            return 1
+        elif M[0] == BaseU and M[1] == (-BaseV % p):
+            return 1
+    
+    # Si on arrive ici, c'est probablement une somme de points
+    # On compte combien de fois le point de base a été ajouté
+    count = 0
+    point = (1, 0)  # Point à l'infini
+    
+    while count < ORDER:
+        if point == M:
+            return count
+        point = add(point[0], point[1], BaseU, BaseV, p)
+        count += 1
+    
+    raise ValueError("Déchiffrement invalide")
 

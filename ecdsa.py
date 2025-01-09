@@ -1,4 +1,4 @@
-from rfc7448 import x25519, add, computeVcoordinate, mult
+from rfc7748 import x25519, add, computeVcoordinate, mult
 from Crypto.Hash import SHA256
 from secrets import randbelow
 from algebra import mod_inv

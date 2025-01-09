@@ -27,25 +27,6 @@ def validate_params() -> bool:
         
     return True
 
-def bruteLog(g: int, c: int, p: int) -> int:
-    """
-    ATTENTION: Cette fonction ne doit pas être utilisée en production.
-    Elle est vulnérable aux attaques temporelles et n'est présente que pour des tests.
-    
-    Args:
-        g: Le générateur
-        c: L'élément dont on cherche le logarithme
-        p: Le module premier
-    """
-    s = 1
-    for i in range(p):
-        if s == c:
-            return i
-        s = (s * g) % p
-        if s == c:
-            return i + 1
-    return -1
-
 def EG_generate_keys(p: int = PARAM_P, g: int = PARAM_G) -> Tuple[int, int]:
     """
     Génère une paire de clés ElGamal de manière cryptographiquement sûre
@@ -90,48 +71,22 @@ def EGM_encrypt(message: int, public_key: int, p: int = PARAM_P, g: int = PARAM_
     if not validate_params():
         raise ValueError("Paramètres du groupe invalides")
     
-    if not 0 < message < p:
+    if message not in (0, 1):
         raise ValueError("Message invalide")
     
-    if not 0 < public_key < p:
-        raise ValueError("Clé publique invalide")
+    # Encode le message : 0 -> 1, 1 -> g
+    encoded = 1 if message == 0 else g
     
     # Génère un nombre aléatoire k
     k = randbelow(PARAM_Q-1) + 1
     
-    # Calcule le chiffrement (g^k, m*h^k)
+    # Calcule c1 = g^k mod p
     c1 = pow(g, k, p)
-    c2 = (message * pow(public_key, k, p)) % p
+    
+    # Calcule c2 = m * y^k mod p
+    c2 = (encoded * pow(public_key, k, p)) % p
     
     return c1, c2
-
-def EGA_encrypt(message: int, public_key: int, p: int = PARAM_P, g: int = PARAM_G) -> Tuple[int, int]:
-    """
-    Chiffre un message avec ElGamal (version additive)
-    
-    Args:
-        message: Le message à chiffrer (doit être < p)
-        public_key: La clé publique du destinataire
-        p: Le module premier
-        g: Le générateur du groupe
-        
-    Returns:
-        Tuple[int, int]: (c1, c2) le texte chiffré
-        
-    Raises:
-        ValueError: Si les paramètres ou le message sont invalides
-    """
-    if not validate_params():
-        raise ValueError("Paramètres du groupe invalides")
-    
-    if not 0 < message < p:
-        raise ValueError("Message invalide")
-    
-    # Encode le message comme g^m
-    encoded_message = pow(g, message, p)
-    
-    # Utilise la version multiplicative
-    return EGM_encrypt(encoded_message, public_key, p, g)
 
 def EG_decrypt(private_key: int, c1: int, c2: int, p: int = PARAM_P) -> int:
     """
@@ -154,15 +109,26 @@ def EG_decrypt(private_key: int, c1: int, c2: int, p: int = PARAM_P) -> int:
     if not 0 < private_key < PARAM_Q:
         raise ValueError("Clé privée invalide")
     
-    if not (0 < c1 < p and 0 < c2 < p):
-        raise ValueError("Texte chiffré invalide")
-    
-    # Calcule s = c1^x
+    # Calcule s = c1^x mod p
     s = pow(c1, private_key, p)
     
-    # Calcule m = c2 * s^(-1)
+    # Calcule m = c2 * s^(-1) mod p
     s_inv = mod_inv(s, p)
-    message = (c2 * s_inv) % p
+    m = (c2 * s_inv) % p
     
-    return message
+    # Décode le message : 1 -> 0, g -> 1
+    if m == 1:
+        return 0
+    elif m == PARAM_G:
+        return 1
+    else:
+        # Pour le vote, compte le nombre de g multiplié
+        count = 0
+        temp = 1
+        while temp != m and count < PARAM_Q:
+            temp = (temp * PARAM_G) % p
+            count += 1
+        if temp == m:
+            return count
+        raise ValueError("Déchiffrement invalide")
 
