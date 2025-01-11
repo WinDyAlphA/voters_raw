@@ -10,6 +10,7 @@ import {
   Button,
   Box,
   Alert,
+  CircularProgress,
 } from '@mui/material';
 import { api } from '../services/api';
 
@@ -21,6 +22,7 @@ function VotePage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     fetchCandidates();
@@ -38,27 +40,45 @@ function VotePage() {
     }
   };
 
-  const handleVote = async (candidateId) => {
-    try {
-      const voteData = {
-        election_id: electionId,
-        candidate: candidateId
-      };
+  const handleVote = async (e) => {
+    e.preventDefault();
+    if (!selectedCandidate) {
+      setError('Veuillez sélectionner un candidat');
+      return;
+    }
 
-      const response = await api.post('/vote', voteData);
-      
+    setSubmitting(true);
+    setError('');
+    
+    try {
+      const response = await api.post('/vote', {
+        election_id: parseInt(electionId),
+        candidate: parseInt(selectedCandidate)
+      });
+
       if (response.status === 200) {
         setSuccess('Vote enregistré avec succès');
-        navigate('/elections');
+        // Attendre 2 secondes avant de rediriger
+        setTimeout(() => {
+          navigate('/');
+        }, 1000);
       }
     } catch (error) {
       console.error('Erreur lors du vote:', error);
-      setError('Erreur lors de l\'enregistrement du vote');
+      setError(error.response?.data?.detail || 'Erreur lors de l\'enregistrement du vote');
+    } finally {
+      setSubmitting(false);
     }
   };
 
   if (loading) {
-    return <Typography>Chargement...</Typography>;
+    return (
+      <Container maxWidth="sm">
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+          <CircularProgress />
+        </Box>
+      </Container>
+    );
   }
 
   return (
@@ -80,7 +100,7 @@ function VotePage() {
             </Alert>
           )}
 
-          <form onSubmit={() => handleVote(selectedCandidate)}>
+          <form onSubmit={handleVote}>
             <RadioGroup
               value={selectedCandidate}
               onChange={(e) => setSelectedCandidate(e.target.value)}
@@ -100,6 +120,7 @@ function VotePage() {
                 type="button"
                 variant="outlined"
                 onClick={() => navigate('/')}
+                disabled={submitting}
               >
                 Retour
               </Button>
@@ -107,9 +128,9 @@ function VotePage() {
                 type="submit"
                 variant="contained"
                 color="primary"
-                disabled={!selectedCandidate}
+                disabled={!selectedCandidate || submitting}
               >
-                Voter
+                {submitting ? <CircularProgress size={24} /> : 'Voter'}
               </Button>
             </Box>
           </form>
