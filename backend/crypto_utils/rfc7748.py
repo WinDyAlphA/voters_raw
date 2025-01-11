@@ -1,4 +1,4 @@
-from backend.crypto_utils.algebra import mod_inv, mod_sqrt
+from crypto_utils.algebra import mod_inv, mod_sqrt
 
 ### add (and double)
 
