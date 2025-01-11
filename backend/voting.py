@@ -19,6 +19,7 @@ from ecdsa import (
 from dsa import (
     DSA_generate_keys, DSA_sign, DSA_verify
 )
+from database import ElectionDatabase
 
 NUM_VOTERS = 10
 NUM_CANDIDATES = 5
@@ -27,19 +28,15 @@ NUM_CANDIDATES = 5
 class Ballot:
     """Représente un bulletin de vote chiffré avec sa signature"""
     encrypted_votes: List[Tuple]  # Liste de 5 votes chiffrés
-    signature: Tuple[int, int]    # Signature du bulletin
+    signature: Tuple[int, int]    # Signature du bulletin (r, s)
+    public_key: Tuple[int, int]   # Clé publique éphémère pour la vérification
     voter_id: int                 # Identifiant du votant
 
 class VotingSystem:
     def __init__(self, use_ec: bool = True, election_keys=None):
-        """
-        Initialise le système de vote
-        
-        Args:
-            use_ec: Si True, utilise EC-ElGamal et ECDSA, sinon ElGamal et DSA
-            election_keys: Clés de chiffrement pour l'élection (si None, en génère de nouvelles)
-        """
+        """Initialise le système de vote"""
         self.use_ec = use_ec
+        self.db = ElectionDatabase()
         
         # Génère ou utilise les clés de l'élection
         if election_keys is None:
@@ -50,14 +47,12 @@ class VotingSystem:
         else:
             self.priv_key, self.pub_key = election_keys
             
-        # Génère les clés de signature pour chaque votant
-        self.voter_keys = {}
-        for i in range(NUM_VOTERS):
-            if use_ec:
-                priv, pub = ECDSA_generate_keys()
-            else:
-                priv, pub = DSA_generate_keys()
-            self.voter_keys[i] = {"private": priv, "public": pub}
+        # Crée une nouvelle élection dans la base de données
+        self.election_id = self.db.create_election(
+            use_ec=use_ec,
+            public_key=self.pub_key,
+            private_key=self.priv_key
+        )
 
     def create_vote(self, candidate: int) -> List[int]:
         """Crée un vote pour un candidat (liste de 0 et 1)"""
@@ -75,7 +70,7 @@ class VotingSystem:
         if sum(vote_list) != 1:
             raise ValueError("Vote invalide: la somme doit être égale à 1")
 
-        # Chiffre chaque élément du vote
+        # Chiffre chaque élément du vote avec la clé publique de l'élection
         encrypted_votes = []
         for vote in vote_list:
             if self.use_ec:
@@ -84,24 +79,39 @@ class VotingSystem:
                 encrypted = EGM_encrypt(vote, self.pub_key)
             encrypted_votes.append(encrypted)
 
+        # Génère une paire de clés éphémère pour la signature
+        if self.use_ec:
+            priv_key, pub_key = ECDSA_generate_keys()
+        else:
+            priv_key, pub_key = DSA_generate_keys()
+
         # Crée un message à signer
         message = b""
         for encrypted in encrypted_votes:
             if self.use_ec:
-                # Pour EC-ElGamal, encrypted[0] et encrypted[1] sont des tuples (x,y)
                 message += int_to_bytes(encrypted[0][0]) + int_to_bytes(encrypted[0][1])
                 message += int_to_bytes(encrypted[1][0]) + int_to_bytes(encrypted[1][1])
             else:
-                # Pour ElGamal classique, encrypted[0] et encrypted[1] sont des entiers
                 message += int_to_bytes(encrypted[0]) + int_to_bytes(encrypted[1])
 
-        # Signe le bulletin
+        # Signe avec la clé éphémère
         if self.use_ec:
-            signature = ECDSA_sign(message, self.voter_keys[voter_id]["private"])
+            signature = ECDSA_sign(message, priv_key)
         else:
-            signature = DSA_sign(message, self.voter_keys[voter_id]["private"])
+            signature = DSA_sign(message, priv_key)
 
-        return Ballot(encrypted_votes, signature, voter_id)
+        ballot = Ballot(
+            encrypted_votes=encrypted_votes,
+            signature=signature,
+            public_key=pub_key,
+            voter_id=voter_id
+        )
+        
+        # Stocke le bulletin dans la base de données
+        if not self.db.store_ballot(self.election_id, ballot):
+            raise ValueError("Ce votant a déjà voté")
+            
+        return ballot
 
     def verify_ballot(self, ballot: Ballot) -> bool:
         """Vérifie la signature d'un bulletin"""
@@ -152,8 +162,21 @@ class VotingSystem:
             
         # Vérifie d'abord toutes les signatures
         for ballot in ballots:
-            if not self.verify_ballot(ballot):
-                raise ValueError(f"Signature invalide pour le votant {ballot.voter_id}")
+            message = b""
+            for encrypted in ballot.encrypted_votes:
+                if self.use_ec:
+                    message += int_to_bytes(encrypted[0][0]) + int_to_bytes(encrypted[0][1])
+                    message += int_to_bytes(encrypted[1][0]) + int_to_bytes(encrypted[1][1])
+                else:
+                    message += int_to_bytes(encrypted[0]) + int_to_bytes(encrypted[1])
+
+            # Vérifie la signature avec la clé publique éphémère
+            if self.use_ec:
+                if not ECDSA_verify(message, ballot.signature, ballot.public_key):
+                    raise ValueError(f"Signature invalide pour le votant {ballot.voter_id}")
+            else:
+                if not DSA_verify(message, ballot.signature, ballot.public_key):
+                    raise ValueError(f"Signature invalide pour le votant {ballot.voter_id}")
 
         # Initialise le résultat avec des éléments neutres
         result = []
@@ -173,7 +196,9 @@ class VotingSystem:
                         result[i], 
                         ballot.encrypted_votes[i]
                     )
-                    
+        
+        # Stocke les résultats combinés
+        self.db.store_results(self.election_id, result)
         return result
 
     def decrypt_result(self, combined_votes: List[Tuple]) -> List[int]:
@@ -182,16 +207,17 @@ class VotingSystem:
         for encrypted in combined_votes:
             if self.use_ec:
                 decrypted = ECEG_decrypt(self.priv_key, encrypted[0], encrypted[1])
-                results.append(decrypted)
             else:
                 decrypted = EG_decrypt(self.priv_key, encrypted[0], encrypted[1])
-                results.append(decrypted)
+            results.append(decrypted)
         
         # Vérifie que le nombre total de votes est égal au nombre de votants
         total_votes = sum(results)
         if total_votes != NUM_VOTERS:
             raise ValueError(f"Nombre total de votes ({total_votes}) différent du nombre de votants ({NUM_VOTERS})")
-                
+        
+        # Stocke les résultats déchiffrés
+        self.db.store_results(self.election_id, combined_votes, results)
         return results
 
 def run_election(use_ec: bool = True):
