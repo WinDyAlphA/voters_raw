@@ -116,34 +116,54 @@ async def get_election_status(
     }
 
 @app.post("/vote")
-async def cast_vote(
-    vote_request: VoteRequest,
+async def submit_vote(
+    vote: VoteRequest,
     current_user: dict = Depends(get_current_user)
 ):
-    """Enregistre un nouveau vote"""
     try:
         # Récupère l'élection
-        election = db.get_election(vote_request.election_id)
+        election = db.get_election(vote.election_id)
         if not election:
             raise HTTPException(status_code=404, detail="Élection non trouvée")
-            
-        # Crée une instance de VotingSystem avec les bonnes clés
+        
+        # Récupère les candidats pour connaître leur nombre
+        candidates = db.get_candidates(vote.election_id)
+        
+        # Crée le système de vote avec les paramètres de l'élection
         voting_system = VotingSystem(
             use_ec=election["use_ec"],
-            num_candidates=len(db.get_candidates(vote_request.election_id))
+            num_candidates=len(candidates)
         )
         
+        # Assigne les clés de l'élection
+        voting_system.priv_key = election["private_key"]
+        voting_system.pub_key = election["public_key"]
+        
         # Crée et chiffre le vote
-        vote = voting_system.create_vote(vote_request.candidate)
-        ballot = voting_system.encrypt_vote(vote, current_user["id"])
+        vote_list = voting_system.create_vote(vote.candidate)
+        ballot = voting_system.encrypt_vote(vote_list, current_user["id"])
+        
+        # Convertit la signature en format hexadécimal si nécessaire
+        if isinstance(ballot.signature, tuple):
+            ballot.signature = tuple(hex(s)[2:] for s in ballot.signature)  # Enlève le préfixe '0x'
         
         # Stocke le bulletin
-        if not db.store_ballot(vote_request.election_id, ballot):
-            raise HTTPException(status_code=400, detail="Vous avez déjà voté pour cette élection")
+        success = db.store_ballot(vote.election_id, ballot)
+        
+        if not success:
+            raise HTTPException(
+                status_code=400,
+                detail="Vous avez déjà voté pour cette élection"
+            )
         
         return {"message": "Vote enregistré avec succès"}
         
     except Exception as e:
+        print(f"Erreur lors du vote : {str(e)}")
+        print(f"Type d'erreur : {type(e)}")
+        import traceback
+        print("Traceback complet :")
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/results")
@@ -220,6 +240,117 @@ async def get_candidates(
 ):
     """Récupère la liste des candidats pour une élection"""
     return db.get_candidates(election_id)
+
+@app.get("/admin/elections")
+async def get_admin_elections(current_user: dict = Depends(get_current_admin)):
+    """Récupère toutes les élections (vue admin)"""
+    return db.get_all_elections()
+
+@app.post("/election/{election_id}/close")
+async def close_election(
+    election_id: int,
+    current_user: dict = Depends(get_current_admin)
+):
+    """Ferme une élection"""
+    if db.close_election(election_id):
+        return {"message": "Élection fermée avec succès"}
+    raise HTTPException(status_code=404, detail="Élection non trouvée")
+
+@app.get("/election/{election_id}/results")
+async def get_election_results(
+    election_id: int,
+    current_user: dict = Depends(get_current_admin)
+):
+    """Calcule et retourne les résultats d'une élection"""
+    try:
+        print(f"Récupération des résultats pour l'élection {election_id}")
+        
+        # Récupère l'élection et ses bulletins
+        election = db.get_election(election_id)
+        if not election:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"L'élection avec l'ID {election_id} n'existe pas"
+            )
+        
+        print(f"Élection trouvée : {election}")
+        
+        if election["status"] != "completed":
+            raise HTTPException(status_code=400, detail="L'élection n'est pas terminée")
+            
+        ballots = db.get_ballots(election_id)
+        print(f"Bulletins trouvés : {ballots}")
+        
+        candidates = db.get_candidates(election_id)
+        print(f"Candidats trouvés : {candidates}")
+        
+        # Crée une instance de VotingSystem avec les bonnes clés
+        voting_system = VotingSystem(
+            use_ec=election["use_ec"],
+            num_candidates=len(candidates)
+        )
+        
+        # Assigne les clés de l'élection
+        print("Clés de l'élection :")
+        print(f"- Privée : {election['private_key']}")
+        print(f"- Publique : {election['public_key']}")
+        
+        voting_system.priv_key = election["private_key"]
+        voting_system.pub_key = election["public_key"]
+        
+        # Combine et déchiffre les votes
+        if not ballots:
+            print("Aucun bulletin trouvé")
+            return {
+                "candidates": candidates,
+                "results": [0] * len(candidates),
+                "total_votes": 0
+            }
+            
+        try:
+            print("Combinaison des votes chiffrés...")
+            combined = voting_system.combine_encrypted_votes(ballots)
+            print(f"Votes combinés : {combined}")
+            
+            print("Déchiffrement des résultats...")
+            results = voting_system.decrypt_result(combined)
+            print(f"Résultats déchiffrés : {results}")
+            
+            return {
+                "candidates": candidates,
+                "results": results,
+                "total_votes": sum(results)
+            }
+        except Exception as e:
+            print(f"Erreur lors du déchiffrement : {str(e)}")
+            print(f"Type d'erreur : {type(e)}")
+            import traceback
+            print("Traceback complet :")
+            print(traceback.format_exc())
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Erreur lors du déchiffrement : {str(e)}"
+            )
+        
+    except Exception as e:
+        print(f"Erreur : {str(e)}")
+        print(f"Type d'erreur : {type(e)}")
+        import traceback
+        print("Traceback complet :")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/debug/elections")
+async def debug_elections(current_user: dict = Depends(get_current_admin)):
+    """Endpoint de débogage pour voir toutes les élections"""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM elections')
+        rows = cursor.fetchall()
+        return {
+            "message": "Liste de toutes les élections",
+            "elections": rows
+        }
 
 if __name__ == "__main__":
     reset_database()  # Décommentez cette ligne une fois pour réinitialiser la base de données

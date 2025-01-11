@@ -86,29 +86,25 @@ def ECEG_generate_keys(p: int = p) -> Tuple[int, Tuple[int, int]]:
 
 def ECEG_encrypt(message: int, public_key: Tuple[int, int], p: int = p) -> Tuple[Tuple[int, int], Tuple[int, int]]:
     """
-    Chiffre un message avec EC-ElGamal
-    
-    Args:
-        message: Le message à chiffrer (0 ou 1)
-        public_key: La clé publique du destinataire (point sur la courbe)
-        p: Le module premier
-        
-    Returns:
-        Tuple[Tuple[int, int], Tuple[int, int]]: (C1, C2) les points chiffrés
+    Chiffre un message (0 ou 1) avec EC-ElGamal
     """
-    if not validate_point(public_key[0], public_key[1], p):
-        raise ValueError("Clé publique invalide")
+    # Vérifie que le message est 0 ou 1
+    if message not in (0, 1):
+        raise ValueError("Le message doit être 0 ou 1")
     
-    # Encode le message en point
-    M = EGencode(message)
-    
-    # Génère un nombre aléatoire k cryptographiquement sûr
-    k = randbelow(ORDER-2) + 1
+    # Génère un nombre aléatoire k
+    k = randbelow(ORDER)
     
     # Calcule C1 = k*G
     C1 = mult(k, BaseU, BaseV, p)
     
-    # Calcule S = k*H où H est la clé publique
+    # Encode le message comme un point
+    if message == 0:
+        M = (1, 0)  # Point à l'infini pour 0
+    else:
+        M = (BaseU, BaseV)  # Point de base pour 1
+    
+    # Calcule S = k*public_key
     S = mult(k, public_key[0], public_key[1], p)
     
     # Calcule C2 = M + S
@@ -120,14 +116,6 @@ def ECEG_decrypt(private_key: int, C1: Tuple[int, int], C2: Tuple[int, int], p: 
     """
     Déchiffre un message avec EC-ElGamal
     """
-    # Vérifie que les points chiffrés sont sur la courbe
-    if not validate_point(C1[0], C1[1], p) or not validate_point(C2[0], C2[1], p):
-        raise ValueError("Points chiffrés invalides")
-    
-    # Vérifie que la clé privée est dans la plage valide
-    if not 0 < private_key < ORDER:
-        raise ValueError("Clé privée invalide")
-    
     # Calcule S = private_key * C1
     S = mult(private_key, C1[0], C1[1], p)
     
@@ -137,25 +125,31 @@ def ECEG_decrypt(private_key: int, C1: Tuple[int, int], C2: Tuple[int, int], p: 
     # Calcule M = C2 - S
     M = add(C2[0], C2[1], neg_S[0], neg_S[1], p)
     
-    # Décode le point en message de manière plus robuste
-    if validate_point(M[0], M[1], p):
-        if M == (1, 0):
-            return 0
-        elif M[0] == BaseU and M[1] == BaseV:
-            return 1
-        elif M[0] == BaseU and M[1] == (-BaseV % p):
-            return 1
-    
-    # Si on arrive ici, c'est probablement une somme de points
-    # On compte combien de fois le point de base a été ajouté
-    count = 0
-    point = (1, 0)  # Point à l'infini
-    
-    while count < ORDER:
-        if point == M:
-            return count
-        point = add(point[0], point[1], BaseU, BaseV, p)
-        count += 1
-    
-    raise ValueError("Déchiffrement invalide")
+    # Décode le message
+    if M == (1, 0):  # Point à l'infini
+        return 0
+    elif M == (BaseU, BaseV):  # Point de base
+        return 1
+    elif M == (BaseU, (-BaseV % p)):  # Point de base négatif
+        return 1
+    else:
+        # Pour les votes combinés, compte le nombre de fois que le point de base apparaît
+        current = (1, 0)  # Point à l'infini
+        base = (BaseU, BaseV)
+        
+        for i in range(10):  # Limite à 10 votes pour éviter une boucle infinie
+            if current == M:
+                return i
+            current = add(current[0], current[1], base[0], base[1], p)
+        
+        # Essaie avec le point négatif
+        current = (1, 0)
+        base = (BaseU, (-BaseV % p))
+        
+        for i in range(10):
+            if current == M:
+                return i
+            current = add(current[0], current[1], base[0], base[1], p)
+            
+        raise ValueError(f"Impossible de déchiffrer le point {M}")
 

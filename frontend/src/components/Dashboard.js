@@ -26,6 +26,7 @@ import { api } from '../services/api';
 import ElectionsList from './ElectionsList';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
+import AdminElectionsList from './AdminElectionsList';
 
 function Dashboard() {
   const { logout, user } = useAuth();
@@ -145,18 +146,7 @@ function Dashboard() {
               </Grid>
 
               <Grid item xs={12}>
-                <Paper sx={{ p: 3 }}>
-                  <Typography variant="h6" gutterBottom>
-                    Gestion des élections
-                  </Typography>
-                  <Button 
-                    variant="contained" 
-                    color="primary" 
-                    onClick={() => setOpenDialog(true)}
-                  >
-                    Initialiser une nouvelle élection
-                  </Button>
-                </Paper>
+                <AdminElectionsList />
               </Grid>
             </>
           ) : (

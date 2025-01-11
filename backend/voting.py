@@ -5,6 +5,7 @@ import json
 from crypto_utils.rfc7748 import add
 from crypto_utils.algebra import int_to_bytes
 from config import NUM_VOTERS, NUM_CANDIDATES
+from models import Ballot
 
 from ecelgamal import (
     ECEG_generate_keys, ECEG_encrypt, ECEG_decrypt,
@@ -22,14 +23,6 @@ from dsa import (
 )
 from database import ElectionDatabase
 
-@dataclass
-class Ballot:
-    """Représente un bulletin de vote chiffré avec sa signature"""
-    encrypted_votes: List[Tuple]  # Liste de 5 votes chiffrés
-    signature: Tuple[int, int]    # Signature du bulletin (r, s)
-    public_key: Union[Tuple[int, int], int]  # Clé publique éphémère (tuple pour EC, int pour ElGamal)
-    voter_id: int                 # Identifiant du votant
-
 class VotingSystem:
     def __init__(self, use_ec: bool = True, num_candidates: int = 2):
         """Initialise le système de vote"""
@@ -37,7 +30,7 @@ class VotingSystem:
         self.num_candidates = num_candidates
         self.db = ElectionDatabase()
         
-        # Génère les clés de l'élection
+        # Génère UNE SEULE paire de clés pour toute l'élection
         if use_ec:
             self.priv_key, self.pub_key = ECEG_generate_keys()
         else:
@@ -55,11 +48,10 @@ class VotingSystem:
 
     def encrypt_vote(self, vote_list: List[int], voter_id: int) -> Ballot:
         """Chiffre et signe un vote"""
-        # Vérifie que la somme des votes est égale à 1
         if sum(vote_list) != 1:
             raise ValueError("Vote invalide: la somme doit être égale à 1")
 
-        # Chiffre chaque élément du vote avec la clé publique de l'élection
+        # Utilise la clé publique de l'élection pour chiffrer
         encrypted_votes = []
         for vote in vote_list:
             if self.use_ec:
@@ -68,13 +60,13 @@ class VotingSystem:
                 encrypted = EGM_encrypt(vote, self.pub_key)
             encrypted_votes.append(encrypted)
 
-        # Génère une paire de clés éphémère pour la signature
+        # Génère une paire de clés éphémère UNIQUEMENT pour la signature
         if self.use_ec:
-            priv_key, pub_key = ECDSA_generate_keys()
+            sig_priv_key, sig_pub_key = ECDSA_generate_keys()
         else:
-            priv_key, pub_key = DSA_generate_keys()
+            sig_priv_key, sig_pub_key = DSA_generate_keys()
 
-        # Crée un message à signer
+        # Signe avec la clé éphémère
         message = b""
         for encrypted in encrypted_votes:
             if self.use_ec:
@@ -83,19 +75,15 @@ class VotingSystem:
             else:
                 message += int_to_bytes(encrypted[0]) + int_to_bytes(encrypted[1])
 
-        # Signe avec la clé éphémère
         if self.use_ec:
-            signature = ECDSA_sign(message, priv_key)
+            signature = ECDSA_sign(message, sig_priv_key)
         else:
-            signature = DSA_sign(message, priv_key)
-            # Pour ElGamal classique, s'assurer que la signature est un tuple
-            if not isinstance(signature, tuple):
-                signature = (signature, 0)  # ou une autre façon de formater la signature
+            signature = DSA_sign(message, sig_priv_key)
 
         return Ballot(
             encrypted_votes=encrypted_votes,
             signature=signature,
-            public_key=pub_key,  # pub_key est soit un tuple (EC) soit un int (ElGamal)
+            public_key=sig_pub_key,  # Uniquement pour vérifier la signature
             voter_id=voter_id
         )
 
@@ -117,85 +105,66 @@ class VotingSystem:
             return DSA_verify(message, ballot.signature, pub_key)
 
     def homomorphic_combine(self, cipher1: Tuple, cipher2: Tuple) -> Tuple:
-        """
-        Combine deux chiffrés en utilisant la propriété homomorphique
-        
-        Args:
-            cipher1: Premier chiffré (c1, c2)
-            cipher2: Second chiffré (c1, c2)
-            
-        Returns:
-            Tuple: Chiffré combiné représentant la somme (EC-ElGamal) 
-            ou le produit (ElGamal classique) des messages
-        """
+        """Combine deux chiffrés homomorphiquement"""
         if self.use_ec:
-            # Addition de points pour EC-ElGamal
-            c1 = add(cipher1[0][0], cipher1[0][1], 
-                    cipher2[0][0], cipher2[0][1], EC_P)
-            c2 = add(cipher1[1][0], cipher1[1][1],
-                    cipher2[1][0], cipher2[1][1], EC_P)
+            # Pour EC-ElGamal, on additionne les points composante par composante
+            c1 = add(cipher1[0][0], cipher1[0][1], cipher2[0][0], cipher2[0][1], EC_P)
+            c2 = add(cipher1[1][0], cipher1[1][1], cipher2[1][0], cipher2[1][1], EC_P)
+            return (c1, c2)
         else:
-            # Multiplication modulaire pour ElGamal classique
+            # Pour ElGamal classique, on multiplie les composantes
             c1 = (cipher1[0] * cipher2[0]) % PARAM_P
             c2 = (cipher1[1] * cipher2[1]) % PARAM_P
-        
-        return (c1, c2)
+            return (c1, c2)
 
     def combine_encrypted_votes(self, ballots: List[Ballot]) -> List[Tuple]:
-        """Combine les votes chiffrés en utilisant la propriété homomorphique"""
+        """Combine les votes chiffrés"""
         if not ballots:
-            raise ValueError("Aucun bulletin à combiner")
-            
-        # Vérifie d'abord toutes les signatures
-        for ballot in ballots:
-            message = b""
-            for encrypted in ballot.encrypted_votes:
+            return []
+        
+        # Initialise avec le premier bulletin
+        result = ballots[0].encrypted_votes
+        
+        # Combine avec les bulletins suivants
+        for ballot in ballots[1:]:
+            for i, (vote, current) in enumerate(zip(ballot.encrypted_votes, result)):
+                # Pour EC-ElGamal, additionne les points
                 if self.use_ec:
-                    message += int_to_bytes(encrypted[0][0]) + int_to_bytes(encrypted[0][1])
-                    message += int_to_bytes(encrypted[1][0]) + int_to_bytes(encrypted[1][1])
+                    result[i] = (
+                        add(vote[0][0], vote[0][1], current[0][0], current[0][1], EC_P),
+                        add(vote[1][0], vote[1][1], current[1][0], current[1][1], EC_P)
+                    )
                 else:
-                    message += int_to_bytes(encrypted[0]) + int_to_bytes(encrypted[1])
-
-            # Vérifie la signature avec la clé publique éphémère
-            if self.use_ec:
-                if not ECDSA_verify(message, ballot.signature, ballot.public_key):
-                    raise ValueError(f"Signature invalide pour le votant {ballot.voter_id}")
-            else:
-                if not DSA_verify(message, ballot.signature, ballot.public_key):
-                    raise ValueError(f"Signature invalide pour le votant {ballot.voter_id}")
-
-        # Initialise le résultat avec des éléments neutres
-        result = []
-        for _ in range(NUM_CANDIDATES):
-            if self.use_ec:
-                result.append(((1, 0), (1, 0)))  # Point neutre pour EC
-            else:
-                result.append((1, 1))  # Élément neutre pour la multiplication
-
-        # Combine tous les bulletins
-        for ballot in ballots:
-            for i in range(NUM_CANDIDATES):
-                if result[i][0] == (1, 0):  # Premier vote pour ce candidat
-                    result[i] = ballot.encrypted_votes[i]
-                else:
-                    result[i] = self.homomorphic_combine(
-                        result[i], 
-                        ballot.encrypted_votes[i]
+                    result[i] = (
+                        (vote[0] * current[0]) % PARAM_P,
+                        (vote[1] * current[1]) % PARAM_P
                     )
         
         return result
 
     def decrypt_result(self, combined_votes: List[Tuple]) -> List[int]:
         """Déchiffre le résultat final"""
+        print("Début du déchiffrement...")
         results = []
-        for encrypted in combined_votes:
-            if self.use_ec:
-                decrypted = ECEG_decrypt(self.priv_key, encrypted[0], encrypted[1])
-            else:
-                decrypted = EG_decrypt(self.priv_key, encrypted[0], encrypted[1])
-            results.append(decrypted)
         
-        # Ne vérifie plus le nombre total de votes
+        # Pour chaque paire de votes combinés
+        for i, encrypted in enumerate(combined_votes):
+            print(f"Déchiffrement du vote {i+1}/{len(combined_votes)}")
+            
+            try:
+                if self.use_ec:
+                    decrypted = ECEG_decrypt(self.priv_key, encrypted[0], encrypted[1])
+                else:
+                    decrypted = EG_decrypt(self.priv_key, encrypted[0], encrypted[1])
+                    
+                print(f"Vote {i+1} déchiffré avec succès : {decrypted}")
+                results.append(decrypted)
+                
+            except Exception as e:
+                print(f"Erreur lors du déchiffrement : {str(e)}")
+                raise
+        
+        print(f"Déchiffrement terminé. Résultats : {results}")
         return results
 
 def run_election(use_ec: bool = True):

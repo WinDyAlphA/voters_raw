@@ -38,24 +38,22 @@ function VotePage() {
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!selectedCandidate) {
-      setError('Veuillez sélectionner un candidat');
-      return;
-    }
-
+  const handleVote = async (candidateId) => {
     try {
-      await api.post(`/vote`, {
-        election_id: parseInt(electionId),
-        candidate: parseInt(selectedCandidate)
-      });
-      setSuccess('Vote enregistré avec succès');
-      setError('');
-      // Redirection après quelques secondes
-      setTimeout(() => navigate('/'), 2000);
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Erreur lors de l\'enregistrement du vote');
+      const voteData = {
+        election_id: electionId,
+        candidate: candidateId
+      };
+
+      const response = await api.post('/vote', voteData);
+      
+      if (response.status === 200) {
+        setSuccess('Vote enregistré avec succès');
+        navigate('/elections');
+      }
+    } catch (error) {
+      console.error('Erreur lors du vote:', error);
+      setError('Erreur lors de l\'enregistrement du vote');
     }
   };
 
@@ -82,7 +80,7 @@ function VotePage() {
             </Alert>
           )}
 
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={() => handleVote(selectedCandidate)}>
             <RadioGroup
               value={selectedCandidate}
               onChange={(e) => setSelectedCandidate(e.target.value)}
