@@ -18,6 +18,7 @@ import {
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
+import ElectionsList from './ElectionsList';
 
 function Dashboard() {
   const { logout, user } = useAuth();
@@ -76,7 +77,7 @@ function Dashboard() {
         )}
 
         <Grid container spacing={3}>
-          {user?.is_admin && (
+          {user?.is_admin ? (
             <>
               <Grid item xs={12}>
                 <Paper sx={{ p: 3 }}>
@@ -116,6 +117,10 @@ function Dashboard() {
                 </Paper>
               </Grid>
             </>
+          ) : (
+            <Grid item xs={12}>
+              <ElectionsList />
+            </Grid>
           )}
 
           <Grid item xs={12}>
