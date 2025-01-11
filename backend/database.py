@@ -55,6 +55,7 @@ def init_database():
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS elections (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
             use_ec BOOLEAN NOT NULL,
             public_key TEXT NOT NULL,
             private_key TEXT NOT NULL,
@@ -140,14 +141,15 @@ class ElectionDatabase:
         """Initialise la base de données"""
         init_database()
     
-    def create_election(self, use_ec: bool, public_key, private_key, candidates: List[str]) -> int:
+    def create_election(self, name: str, use_ec: bool, public_key, private_key, candidates: List[str]) -> int:
         """Crée une nouvelle élection"""
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO elections (use_ec, public_key, private_key)
-                VALUES (?, ?, ?)
+                INSERT INTO elections (name, use_ec, public_key, private_key)
+                VALUES (?, ?, ?, ?)
             ''', (
+                name,
                 use_ec, 
                 serialize_key(public_key), 
                 serialize_key(private_key)
@@ -384,31 +386,39 @@ class ElectionDatabase:
         except sqlite3.Error:
             return False 
 
-    def get_elections(self) -> List[dict]:
+    def get_elections(self, current_user_id: int) -> List[dict]:
         """Récupère la liste des élections avec leurs statistiques"""
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT 
                     e.id,
+                    e.name,
                     e.status,
                     e.created_at,
-                    COUNT(b.id) as total_votes
+                    COUNT(b.id) as total_votes,
+                    EXISTS(
+                        SELECT 1 FROM ballots b2 
+                        WHERE b2.election_id = e.id 
+                        AND b2.voter_id = ?
+                    ) as has_voted
                 FROM elections e
                 LEFT JOIN ballots b ON e.id = b.election_id
                 GROUP BY e.id
                 ORDER BY e.created_at DESC
-            ''')
+            ''', (current_user_id,))
             
             elections = []
             for row in cursor.fetchall():
                 elections.append({
                     "id": row[0],
-                    "status": row[1],
-                    "created_at": row[2],
-                    "total_votes": row[3] if row[3] else 0
+                    "name": row[1],
+                    "status": row[2],
+                    "created_at": row[3],
+                    "total_votes": row[4] if row[4] else 0,
+                    "has_voted": bool(row[5])
                 })
-            return elections 
+            return elections
 
     def get_candidates(self, election_id: int) -> List[dict]:
         """Récupère les candidats d'une élection"""
@@ -425,3 +435,10 @@ class ElectionDatabase:
                 {"id": row[0], "name": row[1]}
                 for row in cursor.fetchall()
             ] 
+
+def reset_database():
+    """Supprime et réinitialise la base de données"""
+    import os
+    if os.path.exists('election.db'):
+        os.remove('election.db')
+    init_database() 

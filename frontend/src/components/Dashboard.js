@@ -36,6 +36,7 @@ function Dashboard() {
   const [openDialog, setOpenDialog] = useState(false);
   const [useEC, setUseEC] = useState(true);
   const [candidates, setCandidates] = useState([{ name: '' }, { name: '' }]);
+  const [electionName, setElectionName] = useState('');
 
   const handleLogout = () => {
     logout();
@@ -75,18 +76,24 @@ function Dashboard() {
 
   const initializeElection = async () => {
     try {
+      if (!electionName.trim()) {
+        setError('Le nom de l\'élection est requis');
+        return;
+      }
       if (candidates.some(c => !c.name.trim())) {
         setError('Tous les candidats doivent avoir un nom');
         return;
       }
 
       await api.post('/election/init', {
+        name: electionName,
         use_ec: useEC,
         candidates: candidates
       });
       setSuccess('Élection initialisée avec succès');
       setError('');
       setOpenDialog(false);
+      setElectionName('');
       setCandidates([{ name: '' }, { name: '' }]);
     } catch (err) {
       setError(err.response?.data?.detail || 'Erreur lors de l\'initialisation de l\'élection');
@@ -225,6 +232,15 @@ function Dashboard() {
                 Ajouter un candidat
               </Button>
             )}
+
+            <TextField
+              fullWidth
+              label="Nom de l'élection"
+              value={electionName}
+              onChange={(e) => setElectionName(e.target.value)}
+              margin="normal"
+              required
+            />
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setOpenDialog(false)}>Annuler</Button>

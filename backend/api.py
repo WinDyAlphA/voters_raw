@@ -6,7 +6,7 @@ from config import NUM_VOTERS, NUM_CANDIDATES
 from voting import VotingSystem, Ballot
 from auth import get_current_user, get_current_admin, create_access_token
 from datetime import timedelta
-from database import ElectionDatabase
+from database import ElectionDatabase, reset_database
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Système de Vote Cryptographique")
@@ -34,6 +34,7 @@ class CandidateCreate(BaseModel):
     name: str
 
 class ElectionConfig(BaseModel):
+    name: str
     use_ec: bool = True
     candidates: List[CandidateCreate]
 
@@ -55,9 +56,11 @@ class InvitationCodeResponse(BaseModel):
 
 class ElectionInfo(BaseModel):
     id: int
+    name: str
     status: str
     created_at: str
     total_votes: int
+    has_voted: bool
 
 class CandidateInfo(BaseModel):
     id: int
@@ -69,6 +72,8 @@ async def initialize_election(
     current_user: dict = Depends(get_current_admin)
 ):
     """Initialise une nouvelle élection"""
+    if not config.name.strip():
+        raise HTTPException(status_code=400, detail="Le nom de l'élection est requis")
     if len(config.candidates) < 2:
         raise HTTPException(
             status_code=400, 
@@ -83,13 +88,14 @@ async def initialize_election(
     try:
         voting_system = VotingSystem(use_ec=config.use_ec, num_candidates=len(config.candidates))
         election_id = db.create_election(
+            name=config.name,
             use_ec=config.use_ec,
             public_key=voting_system.pub_key,
             private_key=voting_system.priv_key,
             candidates=[c.name for c in config.candidates]
         )
         return {
-            "message": f"Élection initialisée avec {'EC-ElGamal' if config.use_ec else 'ElGamal'}",
+            "message": f"Élection '{config.name}' initialisée avec succès",
             "election_id": election_id
         }
     except Exception as e:
@@ -202,10 +208,10 @@ async def generate_invitation(current_user: dict = Depends(get_current_admin)):
     code = db.generate_invitation_code(current_user["id"])
     return {"code": code}
 
-@app.get("/elections", response_model=List[ElectionInfo])
+@app.get("/elections")
 async def get_elections(current_user: dict = Depends(get_current_user)):
     """Récupère la liste des élections"""
-    return db.get_elections()
+    return db.get_elections(current_user["id"])
 
 @app.get("/election/{election_id}/candidates")
 async def get_candidates(
@@ -216,4 +222,5 @@ async def get_candidates(
     return db.get_candidates(election_id)
 
 if __name__ == "__main__":
+    reset_database()  # Décommentez cette ligne une fois pour réinitialiser la base de données
     uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True) 

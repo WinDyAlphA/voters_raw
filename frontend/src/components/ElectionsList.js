@@ -98,13 +98,21 @@ function ElectionsList() {
                 primary={
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                     <Typography variant="subtitle1">
-                      Élection #{election.id}
+                      {election.name}
                     </Typography>
                     <Chip
                       size="small"
                       label={getStatusLabel(election.status)}
                       color={getStatusColor(election.status)}
                     />
+                    {election.has_voted && (
+                      <Chip
+                        size="small"
+                        label="Déjà voté"
+                        color="success"
+                        variant="outlined"
+                      />
+                    )}
                   </Box>
                 }
                 secondary={
@@ -124,8 +132,9 @@ function ElectionsList() {
                   variant="outlined"
                   color="primary"
                   onClick={() => navigate(`/election/${election.id}`)}
+                  disabled={election.has_voted}
                 >
-                  Participer
+                  {election.has_voted ? 'Déjà voté' : 'Participer'}
                 </Button>
               </ListItemSecondaryAction>
             </ListItem>
