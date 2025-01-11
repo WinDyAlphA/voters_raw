@@ -114,7 +114,7 @@ function ElectionsList() {
                     </Typography>
                     <br />
                     <Typography variant="body2" component="span">
-                      {election.total_votes} votes enregistrés • {election.remaining_votes} votes restants
+                      {election.total_votes} votes enregistrés
                     </Typography>
                   </>
                 }

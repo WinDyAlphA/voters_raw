@@ -14,11 +14,18 @@ import {
   DialogContentText,
   DialogActions,
   FormControlLabel,
-  Switch
+  Switch,
+  List,
+  ListItem,
+  ListItemText,
+  IconButton,
+  TextField
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import ElectionsList from './ElectionsList';
+import DeleteIcon from '@mui/icons-material/Delete';
+import AddIcon from '@mui/icons-material/Add';
 
 function Dashboard() {
   const { logout, user } = useAuth();
@@ -28,6 +35,7 @@ function Dashboard() {
   const [success, setSuccess] = useState('');
   const [openDialog, setOpenDialog] = useState(false);
   const [useEC, setUseEC] = useState(true);
+  const [candidates, setCandidates] = useState([{ name: '' }, { name: '' }]);
 
   const handleLogout = () => {
     logout();
@@ -46,15 +54,42 @@ function Dashboard() {
     }
   };
 
+  const addCandidate = () => {
+    if (candidates.length < 20) {
+      setCandidates([...candidates, { name: '' }]);
+    }
+  };
+
+  const removeCandidate = (index) => {
+    if (candidates.length > 2) {
+      const newCandidates = candidates.filter((_, i) => i !== index);
+      setCandidates(newCandidates);
+    }
+  };
+
+  const updateCandidate = (index, name) => {
+    const newCandidates = [...candidates];
+    newCandidates[index].name = name;
+    setCandidates(newCandidates);
+  };
+
   const initializeElection = async () => {
     try {
-      await api.post('/election/init', { use_ec: useEC });
+      if (candidates.some(c => !c.name.trim())) {
+        setError('Tous les candidats doivent avoir un nom');
+        return;
+      }
+
+      await api.post('/election/init', {
+        use_ec: useEC,
+        candidates: candidates
+      });
       setSuccess('Élection initialisée avec succès');
       setError('');
       setOpenDialog(false);
+      setCandidates([{ name: '' }, { name: '' }]);
     } catch (err) {
       setError(err.response?.data?.detail || 'Erreur lors de l\'initialisation de l\'élection');
-      setSuccess('');
     }
   };
 
@@ -135,12 +170,13 @@ function Dashboard() {
           </Grid>
         </Grid>
 
-        <Dialog open={openDialog} onClose={() => setOpenDialog(false)}>
+        <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
           <DialogTitle>Initialiser une nouvelle élection</DialogTitle>
           <DialogContent>
             <DialogContentText>
-              Choisissez le type de chiffrement pour l'élection.
+              Configurez les paramètres de l'élection.
             </DialogContentText>
+            
             <FormControlLabel
               control={
                 <Switch
@@ -151,6 +187,44 @@ function Dashboard() {
               }
               label={useEC ? "EC-ElGamal" : "ElGamal classique"}
             />
+
+            <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>
+              Candidats
+            </Typography>
+
+            <List>
+              {candidates.map((candidate, index) => (
+                <ListItem
+                  key={index}
+                  secondaryAction={
+                    candidates.length > 2 && (
+                      <IconButton edge="end" onClick={() => removeCandidate(index)}>
+                        <DeleteIcon />
+                      </IconButton>
+                    )
+                  }
+                >
+                  <TextField
+                    fullWidth
+                    label={`Candidat ${index + 1}`}
+                    value={candidate.name}
+                    onChange={(e) => updateCandidate(index, e.target.value)}
+                    size="small"
+                    sx={{ mr: 1 }}
+                  />
+                </ListItem>
+              ))}
+            </List>
+
+            {candidates.length < 20 && (
+              <Button
+                startIcon={<AddIcon />}
+                onClick={addCandidate}
+                sx={{ mt: 1 }}
+              >
+                Ajouter un candidat
+              </Button>
+            )}
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setOpenDialog(false)}>Annuler</Button>
