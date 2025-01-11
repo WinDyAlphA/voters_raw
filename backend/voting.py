@@ -4,6 +4,7 @@ from secrets import randbelow
 import json
 from crypto_utils.rfc7748 import add
 from crypto_utils.algebra import int_to_bytes
+from config import NUM_VOTERS, NUM_CANDIDATES
 
 from ecelgamal import (
     ECEG_generate_keys, ECEG_encrypt, ECEG_decrypt,
@@ -21,9 +22,6 @@ from dsa import (
 )
 from database import ElectionDatabase
 
-NUM_VOTERS = 10
-NUM_CANDIDATES = 5
-
 @dataclass
 class Ballot:
     """Représente un bulletin de vote chiffré avec sa signature"""
@@ -33,33 +31,24 @@ class Ballot:
     voter_id: int                 # Identifiant du votant
 
 class VotingSystem:
-    def __init__(self, use_ec: bool = True, election_keys=None):
+    def __init__(self, use_ec: bool = True, num_candidates: int = 2):
         """Initialise le système de vote"""
         self.use_ec = use_ec
+        self.num_candidates = num_candidates
         self.db = ElectionDatabase()
         
-        # Génère ou utilise les clés de l'élection
-        if election_keys is None:
-            if use_ec:
-                self.priv_key, self.pub_key = ECEG_generate_keys()
-            else:
-                self.priv_key, self.pub_key = EG_generate_keys()
+        # Génère les clés de l'élection
+        if use_ec:
+            self.priv_key, self.pub_key = ECEG_generate_keys()
         else:
-            self.priv_key, self.pub_key = election_keys
-            
-        # Crée une nouvelle élection dans la base de données
-        self.election_id = self.db.create_election(
-            use_ec=use_ec,
-            public_key=self.pub_key,
-            private_key=self.priv_key
-        )
+            self.priv_key, self.pub_key = EG_generate_keys()
 
     def create_vote(self, candidate: int) -> List[int]:
         """Crée un vote pour un candidat (liste de 0 et 1)"""
-        if not 0 <= candidate < NUM_CANDIDATES:
+        if not 0 <= candidate < self.num_candidates:
             raise ValueError("Candidat invalide")
         # Vérifie que le vote est valide (un seul 1, le reste des 0)
-        vote = [1 if i == candidate else 0 for i in range(NUM_CANDIDATES)]
+        vote = [1 if i == candidate else 0 for i in range(self.num_candidates)]
         if sum(vote) != 1:
             raise ValueError("Vote invalide: un seul candidat doit être choisi")
         return vote
@@ -103,18 +92,12 @@ class VotingSystem:
             if not isinstance(signature, tuple):
                 signature = (signature, 0)  # ou une autre façon de formater la signature
 
-        ballot = Ballot(
+        return Ballot(
             encrypted_votes=encrypted_votes,
             signature=signature,
             public_key=pub_key,  # pub_key est soit un tuple (EC) soit un int (ElGamal)
             voter_id=voter_id
         )
-        
-        # Stocke le bulletin dans la base de données
-        if not self.db.store_ballot(self.election_id, ballot):
-            raise ValueError("Ce votant a déjà voté")
-            
-        return ballot
 
     def verify_ballot(self, ballot: Ballot) -> bool:
         """Vérifie la signature d'un bulletin"""
@@ -212,11 +195,7 @@ class VotingSystem:
                 decrypted = EG_decrypt(self.priv_key, encrypted[0], encrypted[1])
             results.append(decrypted)
         
-        # Vérifie que le nombre total de votes est égal au nombre de votants
-        total_votes = sum(results)
-        if total_votes != NUM_VOTERS:
-            raise ValueError(f"Nombre total de votes ({total_votes}) différent du nombre de votants ({NUM_VOTERS})")
-        
+        # Ne vérifie plus le nombre total de votes
         return results
 
 def run_election(use_ec: bool = True):

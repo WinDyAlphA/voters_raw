@@ -7,6 +7,7 @@ from contextlib import contextmanager
 import bcrypt
 import secrets
 import string
+from config import NUM_VOTERS
 
 class DatabaseError(Exception):
     """Exception personnalisée pour les erreurs de base de données"""
@@ -77,6 +78,17 @@ def init_database():
         )
         ''')
         
+        # Table pour les candidats
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS candidates (
+            election_id INTEGER,
+            candidate_id INTEGER,
+            name TEXT NOT NULL,
+            PRIMARY KEY (election_id, candidate_id),
+            FOREIGN KEY (election_id) REFERENCES elections(id)
+        )
+        ''')
+        
         # Création de l'admin par défaut s'il n'existe pas déjà
         cursor.execute('SELECT id FROM users WHERE username = ?', ('admin',))
         if not cursor.fetchone():
@@ -128,7 +140,7 @@ class ElectionDatabase:
         """Initialise la base de données"""
         init_database()
     
-    def create_election(self, use_ec: bool, public_key, private_key) -> int:
+    def create_election(self, use_ec: bool, public_key, private_key, candidates: List[str]) -> int:
         """Crée une nouvelle élection"""
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -140,8 +152,17 @@ class ElectionDatabase:
                 serialize_key(public_key), 
                 serialize_key(private_key)
             ))
+            election_id = cursor.lastrowid
+            
+            # Ajoute les candidats
+            for i, name in enumerate(candidates):
+                cursor.execute('''
+                    INSERT INTO candidates (election_id, candidate_id, name)
+                    VALUES (?, ?, ?)
+                ''', (election_id, i, name))
+            
             conn.commit()
-            return cursor.lastrowid
+            return election_id
     
     def store_voter_keys(self, election_id: int, voter_keys: dict):
         """Stocke les clés des votants"""
@@ -198,10 +219,11 @@ class ElectionDatabase:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT id, use_ec, public_key, private_key, status
-                FROM elections WHERE id = ?
+                FROM elections
+                WHERE id = ?
             ''', (election_id,))
-            row = cursor.fetchone()
             
+            row = cursor.fetchone()
             if not row:
                 return None
                 
@@ -361,3 +383,45 @@ class ElectionDatabase:
                 return cursor.rowcount > 0
         except sqlite3.Error:
             return False 
+
+    def get_elections(self) -> List[dict]:
+        """Récupère la liste des élections avec leurs statistiques"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT 
+                    e.id,
+                    e.status,
+                    e.created_at,
+                    COUNT(b.id) as total_votes
+                FROM elections e
+                LEFT JOIN ballots b ON e.id = b.election_id
+                GROUP BY e.id
+                ORDER BY e.created_at DESC
+            ''')
+            
+            elections = []
+            for row in cursor.fetchall():
+                elections.append({
+                    "id": row[0],
+                    "status": row[1],
+                    "created_at": row[2],
+                    "total_votes": row[3] if row[3] else 0
+                })
+            return elections 
+
+    def get_candidates(self, election_id: int) -> List[dict]:
+        """Récupère les candidats d'une élection"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT candidate_id, name
+                FROM candidates
+                WHERE election_id = ?
+                ORDER BY candidate_id
+            ''', (election_id,))
+            
+            return [
+                {"id": row[0], "name": row[1]}
+                for row in cursor.fetchall()
+            ] 
