@@ -6,6 +6,7 @@ from voting import VotingSystem, Ballot, NUM_VOTERS, NUM_CANDIDATES
 from auth import get_current_user, get_current_admin, create_access_token
 from datetime import timedelta
 from database import ElectionDatabase
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Système de Vote Cryptographique")
 
@@ -15,6 +16,14 @@ db = ElectionDatabase()
 # Stockage en mémoire pour notre démo
 voting_system: VotingSystem = None
 ballots: List[Ballot] = []
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class VoteRequest(BaseModel):
     voter_id: int
