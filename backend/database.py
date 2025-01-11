@@ -5,6 +5,8 @@ import json
 import pickle
 from contextlib import contextmanager
 import bcrypt
+import secrets
+import string
 
 class DatabaseError(Exception):
     """Exception personnalisée pour les erreurs de base de données"""
@@ -23,6 +25,19 @@ def init_database():
     """Initialise la base de données avec les tables nécessaires"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        
+        # Table pour les codes d'invitation
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS invitation_codes (
+            code TEXT PRIMARY KEY,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            used_by INTEGER DEFAULT NULL,
+            used_at TIMESTAMP DEFAULT NULL,
+            FOREIGN KEY (created_by) REFERENCES users(id),
+            FOREIGN KEY (used_by) REFERENCES users(id)
+        )
+        ''')
         
         # Table pour les utilisateurs
         cursor.execute('''
@@ -301,3 +316,48 @@ class ElectionDatabase:
         if not user:
             return False
         return check_password_hash(user["password_hash"], password) 
+
+    def generate_invitation_code(self, admin_id: int) -> str:
+        """Génère un nouveau code d'invitation"""
+        # Génère un code aléatoire de 32 caractères
+        alphabet = string.ascii_letters + string.digits
+        code = ''.join(secrets.choice(alphabet) for _ in range(32))
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO invitation_codes (code, created_by)
+                VALUES (?, ?)
+            ''', (code, admin_id))
+            conn.commit()
+        return code
+
+    def verify_invitation_code(self, code: str) -> bool:
+        """Vérifie si un code d'invitation est valide"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT used_by FROM invitation_codes
+                WHERE code = ?
+            ''', (code,))
+            row = cursor.fetchone()
+            
+            if not row:
+                return False  # Code n'existe pas
+            
+            return row[0] is None  # Code existe et n'a pas été utilisé
+
+    def use_invitation_code(self, code: str, user_id: int) -> bool:
+        """Marque un code d'invitation comme utilisé"""
+        try:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE invitation_codes
+                    SET used_by = ?, used_at = CURRENT_TIMESTAMP
+                    WHERE code = ? AND used_by IS NULL
+                ''', (user_id, code))
+                conn.commit()
+                return cursor.rowcount > 0
+        except sqlite3.Error:
+            return False 

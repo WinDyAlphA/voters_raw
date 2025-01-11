@@ -30,10 +30,14 @@ class ElectionResults(BaseModel):
 class UserCreate(BaseModel):
     username: str
     password: str
+    invitation_code: str
 
 class UserLogin(BaseModel):
     username: str
     password: str
+
+class InvitationCodeResponse(BaseModel):
+    code: str
 
 @app.post("/election/init")
 async def initialize_election(
@@ -127,8 +131,21 @@ async def get_results(
 @app.post("/auth/register")
 async def register(user: UserCreate):
     """Enregistre un nouvel utilisateur"""
+    # Vérifie le code d'invitation
+    if not db.verify_invitation_code(user.invitation_code):
+        raise HTTPException(
+            status_code=400, 
+            detail="Code d'invitation invalide ou déjà utilisé"
+        )
+    
+    # Crée l'utilisateur
     if db.create_user(user.username, user.password):
+        # Récupère l'ID du nouvel utilisateur
+        new_user = db.get_user(user.username)
+        # Marque le code comme utilisé
+        db.use_invitation_code(user.invitation_code, new_user["id"])
         return {"message": "Utilisateur créé avec succès"}
+    
     raise HTTPException(status_code=400, detail="Nom d'utilisateur déjà pris")
 
 @app.post("/auth/login")
@@ -142,6 +159,12 @@ async def login(user: UserLogin):
         expires_delta=timedelta(minutes=30)  # ACCESS_TOKEN_EXPIRE_MINUTES
     )
     return {"access_token": access_token, "token_type": "bearer"}
+
+@app.post("/auth/generate-invitation", response_model=InvitationCodeResponse)
+async def generate_invitation(current_user: dict = Depends(get_current_admin)):
+    """Génère un nouveau code d'invitation (admin uniquement)"""
+    code = db.generate_invitation_code(current_user["id"])
+    return {"code": code}
 
 if __name__ == "__main__":
     uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True) 

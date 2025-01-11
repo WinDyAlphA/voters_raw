@@ -39,65 +39,74 @@ def test_auth():
     """Test des fonctionnalités d'authentification"""
     print("\n=== Test de l'authentification ===\n")
     
-    # 1. Création d'un utilisateur normal
-    print("1. Création d'un utilisateur normal")
-    response = make_request("POST", "auth/register", {
-        "username": "user1",
-        "password": "password123"
-    })
-    print_response(response)
-    
-    # 2. Tentative de création d'un utilisateur avec le même nom
-    print("\n2. Tentative de création d'un utilisateur avec le même nom")
-    response = make_request("POST", "auth/register", {
-        "username": "user1",
-        "password": "autrepassword"
-    })
-    print_response(response)
-    
-    # 3. Connexion avec mauvais mot de passe
-    print("\n3. Tentative de connexion avec mauvais mot de passe")
+    # 1. Connexion admin
+    print("1. Connexion admin")
     response = make_request("POST", "auth/login", {
-        "username": "user1",
-        "password": "wrongpassword"
-    })
-    print_response(response)
-    
-    # 4. Connexion réussie
-    print("\n4. Connexion réussie")
-    response = make_request("POST", "auth/login", {
-        "username": "user1",
-        "password": "password123"
+        "username": "admin",
+        "password": "adminpass123"
     })
     print_response(response)
     
     if response.status_code == 200:
-        token = response.json()["access_token"]
+        admin_token = response.json()["access_token"]
         
-        # 5. Test d'accès à une route protégée
-        print("\n5. Test d'accès à une route protégée (status)")
-        response = make_request("GET", "election/status", token=token)
+        # 2. Génération d'un code d'invitation
+        print("\n2. Génération d'un code d'invitation")
+        response = make_request("POST", "auth/generate-invitation", 
+                              token=admin_token)
         print_response(response)
         
-        # 6. Test d'accès à une route admin sans droits
-        print("\n6. Test d'accès à une route admin sans droits")
-        response = make_request("POST", "election/init", 
-                              data={"use_ec": True}, 
-                              token=token)
-        print_response(response)
+        if response.status_code == 200:
+            invitation_code = response.json()["code"]
+
+            print("\n2.5. Génération d'un second code d'invitation")
+            response = make_request("POST", "auth/generate-invitation", 
+                                token=admin_token)
+            invitation_code2 = response.json()["code"]
+            
+            # 3. Création d'un utilisateur avec le code
+            print("\n3. Création d'un utilisateur avec le code")
+            response = make_request("POST", "auth/register", {
+                "username": "user1",
+                "password": "password123",
+                "invitation_code": invitation_code
+            })
+            print_response(response)
+            
+            # 4. Tentative de réutilisation du même code
+            print("\n4. Tentative de réutilisation du même code")
+            response = make_request("POST", "auth/register", {
+                "username": "user2",
+                "password": "password123",
+                "invitation_code": invitation_code
+            })
+            print_response(response)
+    
+    # 5. Test d'accès à une route protégée
+    print("\n5. Test d'accès à une route protégée (status)")
+    response = make_request("GET", "election/status", token=admin_token)
+    print_response(response)
+    
+    # 6. Test d'accès à une route admin sans droits
+    print("\n6. Test d'accès à une route admin sans droits")
+    response = make_request("POST", "election/init", 
+                          data={"use_ec": True}, 
+                          token=admin_token)
+    print_response(response)
     
     # 7. Création d'un admin (à faire manuellement en production!)
     print("\n7. Création d'un compte admin")
     response = make_request("POST", "auth/register", {
-        "username": "admin",
-        "password": "adminpass123"
+        "username": "admin2",
+        "password": "adminpass123",
+        "invitation_code": invitation_code2
     })
     print_response(response)
     
     # 8. Connexion admin
     print("\n8. Connexion admin")
     response = make_request("POST", "auth/login", {
-        "username": "admin",
+        "username": "admin2",
         "password": "adminpass123"
     })
     print_response(response)
