@@ -14,15 +14,26 @@ def print_response(response: requests.Response):
         print("Réponse:", response.text)
     print("-" * 50)
 
-def make_request(method: str, endpoint: str, data: Dict[str, Any] = None) -> requests.Response:
+def login(username: str, password: str) -> str:
+    """Connecte un utilisateur et retourne le token"""
+    response = make_request("POST", "auth/login", {
+        "username": username,
+        "password": password
+    })
+    return response.json()["access_token"]
+
+def make_request(method: str, endpoint: str, data: Dict[str, Any] = None, token: str = None) -> requests.Response:
     """Effectue une requête à l'API"""
     url = f"{BASE_URL}/{endpoint}"
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     
     try:
         if method.upper() == "GET":
-            response = requests.get(url)
+            response = requests.get(url, headers=headers)
         elif method.upper() == "POST":
-            response = requests.post(url, json=data)
+            response = requests.post(url, json=data, headers=headers)
         else:
             raise ValueError(f"Méthode HTTP non supportée: {method}")
             
@@ -30,7 +41,7 @@ def make_request(method: str, endpoint: str, data: Dict[str, Any] = None) -> req
     
     except requests.exceptions.ConnectionError:
         print(f"Erreur: Impossible de se connecter à {url}")
-        print("Assurez-vous que l'API est en cours d'exécution (python backend/api.py)")
+        print("Assurez-vous que l'API est en cours d'exécution")
         exit(1)
 
 def test_voting_system():

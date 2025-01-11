@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 import pickle
 from contextlib import contextmanager
+import bcrypt
 
 class DatabaseError(Exception):
     """Exception personnalisée pour les erreurs de base de données"""
@@ -22,6 +23,17 @@ def init_database():
     """Initialise la base de données avec les tables nécessaires"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        
+        # Table pour les utilisateurs
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            is_admin BOOLEAN NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
         
         # Table pour les élections
         cursor.execute('''
@@ -50,6 +62,21 @@ def init_database():
         )
         ''')
         
+        # Création de l'admin par défaut s'il n'existe pas déjà
+        cursor.execute('SELECT id FROM users WHERE username = ?', ('admin',))
+        if not cursor.fetchone():
+            cursor.execute('''
+                INSERT INTO users (username, password_hash, is_admin)
+                VALUES (?, ?, ?)
+            ''', (
+                'admin',
+                generate_password_hash('adminpass123'),
+                True
+            ))
+            print("Compte administrateur créé :")
+            print("Username: admin")
+            print("Password: adminpass123")
+        
         conn.commit()
 
 def serialize_key(key) -> str:
@@ -71,6 +98,15 @@ def deserialize_key(key_str: str):
     else:
         # Pour les clés ElGamal
         return int(parts[1], 16)
+
+def generate_password_hash(password: str) -> str:
+    """Génère un hash sécurisé du mot de passe"""
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode(), salt).decode()
+
+def check_password_hash(stored_hash: str, password: str) -> bool:
+    """Vérifie si le mot de passe correspond au hash"""
+    return bcrypt.checkpw(password.encode(), stored_hash.encode())
 
 class ElectionDatabase:
     def __init__(self):
@@ -220,3 +256,48 @@ class ElectionDatabase:
     def get_results(self, election_id: int) -> Optional[dict]:
         """Cette méthode n'est plus nécessaire"""
         pass 
+
+    def create_user(self, username: str, password: str, is_admin: bool = False) -> bool:
+        """Crée un nouvel utilisateur"""
+        try:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO users (username, password_hash, is_admin)
+                    VALUES (?, ?, ?)
+                ''', (
+                    username,
+                    generate_password_hash(password),
+                    is_admin
+                ))
+                conn.commit()
+                return True
+        except sqlite3.IntegrityError:
+            return False
+
+    def get_user(self, username: str) -> Optional[dict]:
+        """Récupère les informations d'un utilisateur"""
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, username, password_hash, is_admin
+                FROM users WHERE username = ?
+            ''', (username,))
+            row = cursor.fetchone()
+            
+            if not row:
+                return None
+                
+            return {
+                "id": row[0],
+                "username": row[1],
+                "password_hash": row[2],
+                "is_admin": bool(row[3])
+            }
+
+    def verify_password(self, username: str, password: str) -> bool:
+        """Vérifie le mot de passe d'un utilisateur"""
+        user = self.get_user(username)
+        if not user:
+            return False
+        return check_password_hash(user["password_hash"], password) 

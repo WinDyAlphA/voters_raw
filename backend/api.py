@@ -1,13 +1,18 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Dict
 import uvicorn
 from voting import VotingSystem, Ballot, NUM_VOTERS, NUM_CANDIDATES
+from auth import get_current_user, get_current_admin, create_access_token
+from datetime import timedelta
+from database import ElectionDatabase
 
 app = FastAPI(title="Système de Vote Cryptographique")
 
+# Initialisation de la base de données
+db = ElectionDatabase()
+
 # Stockage en mémoire pour notre démo
-# En production, il faudrait utiliser une vraie base de données
 voting_system: VotingSystem = None
 ballots: List[Ballot] = []
 
@@ -22,8 +27,19 @@ class ElectionResults(BaseModel):
     results: List[int]
     total_votes: int
 
+class UserCreate(BaseModel):
+    username: str
+    password: str
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
 @app.post("/election/init")
-async def initialize_election(config: ElectionConfig):
+async def initialize_election(
+    config: ElectionConfig,
+    current_user: dict = Depends(get_current_admin)
+):
     """Initialise une nouvelle élection"""
     global voting_system, ballots
     
@@ -39,7 +55,9 @@ async def initialize_election(config: ElectionConfig):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/election/status")
-async def get_election_status():
+async def get_election_status(
+    current_user: dict = Depends(get_current_user)
+):
     """Retourne le statut actuel de l'élection"""
     if not voting_system:
         raise HTTPException(status_code=400, detail="Aucune élection en cours")
@@ -51,7 +69,10 @@ async def get_election_status():
     }
 
 @app.post("/vote")
-async def cast_vote(vote_request: VoteRequest):
+async def cast_vote(
+    vote_request: VoteRequest,
+    current_user: dict = Depends(get_current_user)
+):
     """Enregistre un nouveau vote"""
     if not voting_system:
         raise HTTPException(status_code=400, detail="Aucune élection en cours")
@@ -80,7 +101,9 @@ async def cast_vote(vote_request: VoteRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/results")
-async def get_results() -> ElectionResults:
+async def get_results(
+    current_user: dict = Depends(get_current_admin)
+):
     """Calcule et retourne les résultats de l'élection"""
     if not voting_system:
         raise HTTPException(status_code=400, detail="Aucune élection en cours")
@@ -100,6 +123,25 @@ async def get_results() -> ElectionResults:
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/auth/register")
+async def register(user: UserCreate):
+    """Enregistre un nouvel utilisateur"""
+    if db.create_user(user.username, user.password):
+        return {"message": "Utilisateur créé avec succès"}
+    raise HTTPException(status_code=400, detail="Nom d'utilisateur déjà pris")
+
+@app.post("/auth/login")
+async def login(user: UserLogin):
+    """Connecte un utilisateur"""
+    if not db.verify_password(user.username, user.password):
+        raise HTTPException(status_code=401, detail="Nom d'utilisateur ou mot de passe incorrect")
+    
+    access_token = create_access_token(
+        data={"sub": user.username},
+        expires_delta=timedelta(minutes=30)  # ACCESS_TOKEN_EXPIRE_MINUTES
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
 
 if __name__ == "__main__":
     uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True) 
