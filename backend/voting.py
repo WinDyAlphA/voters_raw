@@ -120,6 +120,31 @@ class VotingSystem:
         else:
             return DSA_verify(message, ballot.signature, pub_key)
 
+    def homomorphic_combine(self, cipher1: Tuple, cipher2: Tuple) -> Tuple:
+        """
+        Combine deux chiffrés en utilisant la propriété homomorphique
+        
+        Args:
+            cipher1: Premier chiffré (c1, c2)
+            cipher2: Second chiffré (c1, c2)
+            
+        Returns:
+            Tuple: Chiffré combiné représentant la somme (EC-ElGamal) 
+            ou le produit (ElGamal classique) des messages
+        """
+        if self.use_ec:
+            # Addition de points pour EC-ElGamal
+            c1 = add(cipher1[0][0], cipher1[0][1], 
+                    cipher2[0][0], cipher2[0][1], EC_P)
+            c2 = add(cipher1[1][0], cipher1[1][1],
+                    cipher2[1][0], cipher2[1][1], EC_P)
+        else:
+            # Multiplication modulaire pour ElGamal classique
+            c1 = (cipher1[0] * cipher2[0]) % PARAM_P
+            c2 = (cipher1[1] * cipher2[1]) % PARAM_P
+        
+        return (c1, c2)
+
     def combine_encrypted_votes(self, ballots: List[Ballot]) -> List[Tuple]:
         """Combine les votes chiffrés en utilisant la propriété homomorphique"""
         if not ballots:
@@ -130,9 +155,9 @@ class VotingSystem:
             if not self.verify_ballot(ballot):
                 raise ValueError(f"Signature invalide pour le votant {ballot.voter_id}")
 
-        # Initialise le résultat avec le premier bulletin
+        # Initialise le résultat avec des éléments neutres
         result = []
-        for i in range(NUM_CANDIDATES):
+        for _ in range(NUM_CANDIDATES):
             if self.use_ec:
                 result.append(((1, 0), (1, 0)))  # Point neutre pour EC
             else:
@@ -141,23 +166,13 @@ class VotingSystem:
         # Combine tous les bulletins
         for ballot in ballots:
             for i in range(NUM_CANDIDATES):
-                if self.use_ec:
-                    # Addition de points pour EC-ElGamal
-                    if result[i][0] == (1, 0):
-                        result[i] = (ballot.encrypted_votes[i][0], ballot.encrypted_votes[i][1])
-                    else:
-                        c1 = add(result[i][0][0], result[i][0][1], 
-                                ballot.encrypted_votes[i][0][0], 
-                                ballot.encrypted_votes[i][0][1], EC_P)
-                        c2 = add(result[i][1][0], result[i][1][1],
-                                ballot.encrypted_votes[i][1][0],
-                                ballot.encrypted_votes[i][1][1], EC_P)
-                        result[i] = (c1, c2)
+                if result[i][0] == (1, 0):  # Premier vote pour ce candidat
+                    result[i] = ballot.encrypted_votes[i]
                 else:
-                    # Multiplication modulaire pour ElGamal
-                    c1 = (result[i][0] * ballot.encrypted_votes[i][0]) % PARAM_P
-                    c2 = (result[i][1] * ballot.encrypted_votes[i][1]) % PARAM_P
-                    result[i] = (c1, c2)
+                    result[i] = self.homomorphic_combine(
+                        result[i], 
+                        ballot.encrypted_votes[i]
+                    )
                     
         return result
 
@@ -205,5 +220,6 @@ def run_election(use_ec: bool = True):
     
     return results 
 
-results_ec = run_election(use_ec=True)
-results_ec = run_election(use_ec=False)
+if __name__ == "__main__":
+    results_ec = run_election(use_ec=True)
+    results_ec = run_election(use_ec=False)
