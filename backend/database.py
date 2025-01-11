@@ -28,22 +28,10 @@ def init_database():
         CREATE TABLE IF NOT EXISTS elections (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             use_ec BOOLEAN NOT NULL,
-            public_key BLOB NOT NULL,
-            private_key BLOB NOT NULL,
+            public_key TEXT NOT NULL,
+            private_key TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'ongoing',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        ''')
-        
-        # Table pour les clés des votants
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS voter_keys (
-            election_id INTEGER,
-            voter_id INTEGER,
-            public_key BLOB NOT NULL,
-            private_key BLOB NOT NULL,
-            FOREIGN KEY (election_id) REFERENCES elections(id),
-            PRIMARY KEY (election_id, voter_id)
         )
         ''')
         
@@ -59,17 +47,6 @@ def init_database():
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (election_id) REFERENCES elections(id),
             UNIQUE (election_id, voter_id)
-        )
-        ''')
-        
-        # Table pour les résultats
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS results (
-            election_id INTEGER PRIMARY KEY,
-            combined_votes BLOB NOT NULL,
-            decrypted_results BLOB,
-            computed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (election_id) REFERENCES elections(id)
         )
         ''')
         
@@ -234,45 +211,9 @@ class ElectionDatabase:
             return ballots
     
     def store_results(self, election_id: int, combined_votes, decrypted_results=None):
-        """Stocke les résultats d'une élection"""
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO results (election_id, combined_votes, decrypted_results)
-                VALUES (?, ?, ?)
-                ON CONFLICT(election_id) DO UPDATE SET
-                    combined_votes=excluded.combined_votes,
-                    decrypted_results=excluded.decrypted_results,
-                    computed_at=CURRENT_TIMESTAMP
-            ''', (
-                election_id,
-                pickle.dumps(combined_votes),
-                pickle.dumps(decrypted_results) if decrypted_results else None
-            ))
-            
-            # Met à jour le statut de l'élection
-            cursor.execute('''
-                UPDATE elections SET status = ?
-                WHERE id = ?
-            ''', ('completed' if decrypted_results else 'ongoing', election_id))
-            
-            conn.commit()
-    
+        """Cette méthode n'est plus nécessaire"""
+        pass
+
     def get_results(self, election_id: int) -> Optional[dict]:
-        """Récupère les résultats d'une élection"""
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT combined_votes, decrypted_results, computed_at
-                FROM results WHERE election_id = ?
-            ''', (election_id,))
-            row = cursor.fetchone()
-            
-            if not row:
-                return None
-                
-            return {
-                "combined_votes": pickle.loads(row[0]),
-                "decrypted_results": pickle.loads(row[1]) if row[1] else None,
-                "computed_at": row[2]
-            } 
+        """Cette méthode n'est plus nécessaire"""
+        pass 

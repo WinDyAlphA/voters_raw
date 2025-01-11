@@ -197,8 +197,6 @@ class VotingSystem:
                         ballot.encrypted_votes[i]
                     )
         
-        # Stocke les résultats combinés
-        self.db.store_results(self.election_id, result)
         return result
 
     def decrypt_result(self, combined_votes: List[Tuple]) -> List[int]:
@@ -216,8 +214,6 @@ class VotingSystem:
         if total_votes != NUM_VOTERS:
             raise ValueError(f"Nombre total de votes ({total_votes}) différent du nombre de votants ({NUM_VOTERS})")
         
-        # Stocke les résultats déchiffrés
-        self.db.store_results(self.election_id, combined_votes, results)
         return results
 
 def run_election(use_ec: bool = True):
