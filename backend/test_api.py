@@ -39,7 +39,7 @@ def test_voting_system():
     
     # 1. Initialisation de l'élection
     print("1. Initialisation de l'élection avec EC-ElGamal")
-    response = make_request("POST", "election/init", {"use_ec": True})
+    response = make_request("POST", "election/init", {"use_ec": False})
     print_response(response)
     
     # 2. Vérification du statut initial
@@ -89,7 +89,7 @@ def test_voting_system():
     
     # 7. Nouvelle élection avec ElGamal classique
     print("\n7. Initialisation d'une nouvelle élection avec ElGamal classique")
-    response = make_request("POST", "election/init", {"use_ec": False})
+    response = make_request("POST", "election/init", {"use_ec": True})
     print_response(response)
 
 if __name__ == "__main__":

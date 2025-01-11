@@ -1,4 +1,4 @@
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Union
 from dataclasses import dataclass
 from secrets import randbelow
 import json
@@ -29,7 +29,7 @@ class Ballot:
     """Représente un bulletin de vote chiffré avec sa signature"""
     encrypted_votes: List[Tuple]  # Liste de 5 votes chiffrés
     signature: Tuple[int, int]    # Signature du bulletin (r, s)
-    public_key: Tuple[int, int]   # Clé publique éphémère pour la vérification
+    public_key: Union[Tuple[int, int], int]  # Clé publique éphémère (tuple pour EC, int pour ElGamal)
     voter_id: int                 # Identifiant du votant
 
 class VotingSystem:
@@ -99,11 +99,14 @@ class VotingSystem:
             signature = ECDSA_sign(message, priv_key)
         else:
             signature = DSA_sign(message, priv_key)
+            # Pour ElGamal classique, s'assurer que la signature est un tuple
+            if not isinstance(signature, tuple):
+                signature = (signature, 0)  # ou une autre façon de formater la signature
 
         ballot = Ballot(
             encrypted_votes=encrypted_votes,
             signature=signature,
-            public_key=pub_key,
+            public_key=pub_key,  # pub_key est soit un tuple (EC) soit un int (ElGamal)
             voter_id=voter_id
         )
         

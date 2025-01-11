@@ -56,18 +56,21 @@ def serialize_key(key) -> str:
     """Convertit une clé en chaîne hexadécimale"""
     if isinstance(key, tuple):
         # Pour les clés EC qui sont des tuples de coordonnées
-        return f"{key[0]:x},{key[1]:x}"
+        return f"ec,{key[0]:x},{key[1]:x}"
     # Pour les clés ElGamal qui sont des entiers
-    return f"{key:x}"
+    return f"eg,{key:x}"
 
 def deserialize_key(key_str: str):
     """Convertit une chaîne hexadécimale en clé"""
-    if ',' in key_str:
+    parts = key_str.split(',')
+    key_type = parts[0]
+    
+    if key_type == "ec":
         # Pour les clés EC
-        x, y = key_str.split(',')
-        return (int(x, 16), int(y, 16))
-    # Pour les clés ElGamal
-    return int(key_str, 16)
+        return (int(parts[1], 16), int(parts[2], 16))
+    else:
+        # Pour les clés ElGamal
+        return int(parts[1], 16)
 
 class ElectionDatabase:
     def __init__(self):
@@ -115,9 +118,10 @@ class ElectionDatabase:
                     [serialize_key(c1), serialize_key(c2)]
                     for c1, c2 in ballot.encrypted_votes
                 ])
-                # Sérialise la signature et la clé publique
+                # Sérialise la signature
                 signature_str = json.dumps([serialize_key(s) for s in ballot.signature])
-                public_key_str = json.dumps([serialize_key(k) for k in ballot.public_key])
+                # Sérialise la clé publique (qui peut être un tuple ou un int)
+                public_key_str = serialize_key(ballot.public_key)
                 
                 cursor.execute('''
                     INSERT INTO ballots (
@@ -193,13 +197,12 @@ class ElectionDatabase:
                     (deserialize_key(c1), deserialize_key(c2))
                     for c1, c2 in json.loads(row[1])
                 ]
-                # Désérialise la signature et la clé publique
+                # Désérialise la signature
                 signature = tuple(
                     deserialize_key(s) for s in json.loads(row[2])
                 )
-                public_key = tuple(
-                    deserialize_key(k) for k in json.loads(row[3])
-                )
+                # Désérialise la clé publique
+                public_key = deserialize_key(row[3])
                 
                 ballot = Ballot(
                     encrypted_votes=encrypted_votes,
