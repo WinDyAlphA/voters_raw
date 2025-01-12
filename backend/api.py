@@ -340,18 +340,6 @@ async def get_election_results(
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/debug/elections")
-async def debug_elections(current_user: dict = Depends(get_current_admin)):
-    """Endpoint de débogage pour voir toutes les élections"""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM elections')
-        rows = cursor.fetchall()
-        return {
-            "message": "Liste de toutes les élections",
-            "elections": rows
-        }
-
 if __name__ == "__main__":
     reset_database()  # Décommentez cette ligne une fois pour réinitialiser la base de données
     uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True) 
