@@ -1,0 +1,27 @@
+FROM node:19-alpine
+
+WORKDIR /app
+
+# Copie des fichiers de dépendances
+COPY package*.json ./
+
+# Installation des dépendances
+RUN npm install
+
+# Copie du code source
+COPY . .
+
+# Construction de l'application
+RUN npm run build
+
+# Installation de serve
+RUN npm install -g serve
+
+# Déplace le fichier serve.json dans le répertoire build
+RUN cp serve.json build/
+
+# Exposition du port
+EXPOSE 3000
+
+# Commande de démarrage pour la production
+CMD ["serve", "-s", "build", "-l", "3000", "--config", "serve.json"] 
