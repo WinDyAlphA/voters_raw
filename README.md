@@ -24,7 +24,7 @@ Pour lancer l'application en mode développement :
 ```bash
 git clone -b frontendlogin https://github.com/votre-utilisateur/voters_raw.git
 cd voters_raw
-docker-compose up --build
+docker compose up --build
 ```
 
 L'application sera accessible sur :
@@ -64,6 +64,12 @@ Les votes sont chiffrés individuellement et combinés de manière homomorphe, c
 - Le chiffrement est effectué côté serveur
 - Les clés privées sont stockées sur le serveur
 - L'application n'est pas conçue pour gérer un très grand nombre de votants
+
+## Pour arrêter les containers
+
+```bash
+docker compose down -v
+```
 
 ## Contribution
 
