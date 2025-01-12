@@ -131,3 +131,75 @@ def EG_decrypt(private_key: int, c1: int, c2: int, p: int = PARAM_P) -> int:
         if temp == m:
             return count
         raise ValueError("Déchiffrement invalide")
+
+def EGA_encrypt(message: int, public_key: int, p: int = PARAM_P, g: int = PARAM_G) -> Tuple[int, int]:
+    """
+    Chiffre un message avec ElGamal (version additive)
+    
+    Args:
+        message: Le message à chiffrer (doit être 0 ou 1)
+        public_key: La clé publique du destinataire
+        p: Le module premier
+        g: Le générateur du groupe
+        
+    Returns:
+        Tuple[int, int]: (c1, c2) le texte chiffré
+    """
+    if not validate_params():
+        raise ValueError("Paramètres du groupe invalides")
+    
+    if message not in (0, 1):
+        raise ValueError("Message invalide")
+    
+    # Encode le message : m -> g^m
+    encoded = pow(g, message, p)
+    
+    # Génère un nombre aléatoire k
+    k = randbelow(PARAM_Q-2) + 1
+    
+    # Calcule c1 = g^k mod p
+    c1 = pow(g, k, p)
+    
+    # Calcule c2 = g^m * y^k mod p
+    c2 = (encoded * pow(public_key, k, p)) % p
+    
+    return c1, c2
+
+def EGA_decrypt(private_key: int, c1: int, c2: int, p: int = PARAM_P, g: int = PARAM_G) -> int:
+    """
+    Déchiffre un message avec ElGamal (version additive)
+    
+    Args:
+        private_key: La clé privée
+        c1, c2: Le texte chiffré
+        p: Le module premier
+        g: Le générateur du groupe
+        
+    Returns:
+        int: Le message déchiffré (0 ou 1)
+    """
+    if not validate_params():
+        raise ValueError("Paramètres du groupe invalides")
+    
+    if not 0 < private_key < PARAM_Q:
+        raise ValueError("Clé privée invalide")
+    
+    # Calcule s = c1^x mod p
+    s = pow(c1, private_key, p)
+    
+    # Calcule m = c2 * s^(-1) mod p
+    s_inv = mod_inv(s, p)
+    m = (c2 * s_inv) % p
+    
+    # Décode le message en cherchant l'exposant
+    # m = g^message mod p
+    message = 0
+    temp = 1
+    while temp != m and message < PARAM_Q:
+        message += 1
+        temp = pow(g, message, p)
+    
+    if temp != m:
+        raise ValueError("Déchiffrement invalide")
+    
+    return message

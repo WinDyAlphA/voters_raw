@@ -11,6 +11,7 @@ from ecelgamal import (
 )
 from elgamal import (
     EG_generate_keys, EGM_encrypt, EG_decrypt,
+    EGA_encrypt, EGA_decrypt,
     PARAM_P, PARAM_Q, PARAM_G
 )
 from ecdsa import (
@@ -33,15 +34,17 @@ class Ballot:
     voter_id: int                 # Identifiant du votant
 
 class VotingSystem:
-    def __init__(self, use_ec: bool = True, election_keys=None):
+    def __init__(self, use_ec: bool = True, use_multiplicative: bool = False, election_keys=None):
         """
         Initialise le système de vote
         
         Args:
             use_ec: Si True, utilise EC-ElGamal et ECDSA, sinon ElGamal et DSA
-            election_keys: Clés de chiffrement pour l'élection (si None, en génère de nouvelles)
+            use_multiplicative: Si True, utilise ElGamal multiplicatif, sinon additif
+            election_keys: Clés de chiffrement pour l'élection
         """
         self.use_ec = use_ec
+        self.use_multiplicative = use_multiplicative
         
         # Génère ou utilise les clés de l'élection
         if election_keys is None:
@@ -83,7 +86,10 @@ class VotingSystem:
             if self.use_ec:
                 encrypted = ECEG_encrypt(vote, self.pub_key)
             else:
-                encrypted = EGM_encrypt(vote, self.pub_key)
+                if self.use_multiplicative:
+                    encrypted = EGM_encrypt(vote, self.pub_key)
+                else:
+                    encrypted = EGA_encrypt(vote, self.pub_key)
             encrypted_votes.append(encrypted)
 
         # Crée un message à signer
@@ -138,7 +144,10 @@ class VotingSystem:
             if self.use_ec:
                 result.append(((1, 0), (1, 0)))  # Point neutre pour EC
             else:
-                result.append((1, 1))  # Élément neutre pour la multiplication
+                if self.use_multiplicative:
+                    result.append((1, 1))  # Élément neutre multiplicatif
+                else:
+                    result.append((1, 1))  # Même élément neutre pour additif
 
         # Combine tous les bulletins
         for ballot in ballots:
@@ -156,9 +165,14 @@ class VotingSystem:
                                 ballot.encrypted_votes[i][1][1], EC_P)
                         result[i] = (c1, c2)
                 else:
-                    # Multiplication modulaire pour ElGamal
-                    c1 = (result[i][0] * ballot.encrypted_votes[i][0]) % PARAM_P
-                    c2 = (result[i][1] * ballot.encrypted_votes[i][1]) % PARAM_P
+                    if self.use_multiplicative:
+                        # Version multiplicative
+                        c1 = (result[i][0] * ballot.encrypted_votes[i][0]) % PARAM_P
+                        c2 = (result[i][1] * ballot.encrypted_votes[i][1]) % PARAM_P
+                    else:
+                        # Version additive
+                        c1 = (result[i][0] * ballot.encrypted_votes[i][0]) % PARAM_P
+                        c2 = (result[i][1] * ballot.encrypted_votes[i][1]) % PARAM_P
                     result[i] = (c1, c2)
                     
         return result
@@ -169,10 +183,12 @@ class VotingSystem:
         for encrypted in combined_votes:
             if self.use_ec:
                 decrypted = ECEG_decrypt(self.priv_key, encrypted[0], encrypted[1])
-                results.append(decrypted)
             else:
-                decrypted = EG_decrypt(self.priv_key, encrypted[0], encrypted[1])
-                results.append(decrypted)
+                if self.use_multiplicative:
+                    decrypted = EG_decrypt(self.priv_key, encrypted[0], encrypted[1])
+                else:
+                    decrypted = EGA_decrypt(self.priv_key, encrypted[0], encrypted[1])
+            results.append(decrypted)
         
         # Vérifie que le nombre total de votes est égal au nombre de votants
         total_votes = sum(results)
@@ -181,10 +197,10 @@ class VotingSystem:
                 
         return results
 
-def run_election(use_ec: bool = True):
+def run_election(use_ec: bool = True, use_multiplicative: bool = False):
     """Exécute une élection complète"""
     # Initialise le système de vote
-    system = VotingSystem(use_ec=use_ec)
+    system = VotingSystem(use_ec=use_ec, use_multiplicative=use_multiplicative)
     
     # Simule les votes
     ballots = []
@@ -263,9 +279,15 @@ def test_signatures():
         print(f"Votant {voter_id} (signature invalide): {'non détectée!' if is_valid else 'correctement rejetée'}")
 
 if __name__ == "__main__":
-    # Tests existants
+    # Tests avec les différentes versions
+    print("\nTest avec EC-ElGamal:")
     results_ec = run_election(use_ec=True)
-    results_classic = run_election(use_ec=False)
     
-    # Ajout des tests de signature
+    print("\nTest avec ElGamal multiplicatif:")
+    results_mult = run_election(use_ec=False, use_multiplicative=True)
+    
+    print("\nTest avec ElGamal additif:")
+    results_add = run_election(use_ec=False, use_multiplicative=False)
+    
+    # Tests de signature
     test_signatures()

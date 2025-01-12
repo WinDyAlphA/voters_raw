@@ -1,1 +1,6 @@
-pycryptodome>=3.19.0  
+# Cryptographic libraries
+pycryptodome>=3.19.0  # Pour les fonctions de hachage SHA256
+
+# Testing
+pytest>=7.4.0         # Pour les tests unitaires
+pytest-cov>=4.1.0     # Pour la couverture des tests  
