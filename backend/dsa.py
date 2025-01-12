@@ -88,14 +88,11 @@ def DSA_sign(message: bytes, private_key: int, p: int = PARAM_P, q: int = PARAM_
     
     Args:
         message: Le message à signer
-        private_key: La clé privée
+        private_key: La clé privée x
         p, q, g: Les paramètres DSA
         
     Returns:
         Tuple[int, int]: La signature (r, s)
-        
-    Raises:
-        ValueError: Si les paramètres ou la clé sont invalides
     """
     if not validate_params():
         raise ValueError("Paramètres DSA invalides")
@@ -104,24 +101,29 @@ def DSA_sign(message: bytes, private_key: int, p: int = PARAM_P, q: int = PARAM_
         raise ValueError("Clé privée invalide")
     
     # Calcule le hash du message
-    h = H(message)
+    h = H(message) % q
     
-    while True:
-        # Génère un nonce k
+    while True:  # Boucle jusqu'à obtenir r ≠ 0 et s ≠ 0
+        # 1. Choose random k ∈ {1, q-1}
         k = DSA_generate_nonce(private_key, message, q)
         
-        # Calcule r = (g^k mod p) mod q
+        # 2. Compute r = (g^k mod p) mod q
         r = pow(g, k, p) % q
         if r == 0:
-            continue
+            continue  # Si r = 0, recommence avec un nouveau k
         
-        # Calcule s = k^(-1)(h + x*r) mod q
-        k_inv = mod_inv(k, q)
-        s = (k_inv * (h + private_key * r)) % q
-        if s == 0:
-            continue
+        # 3. Compute s = (H(m) + x·r)/k mod q
+        try:
+            k_inv = mod_inv(k, q)
+            s = (k_inv * ((h + private_key * r) % q)) % q
+            if s == 0:
+                continue  # Si s = 0, recommence avec un nouveau k
             
-        return r, s
+            return r, s
+            
+        except Exception:
+            # Si k_inv n'existe pas, recommence avec un nouveau k
+            continue
 
 def DSA_verify(message: bytes, signature: Tuple[int, int], public_key: int, 
                p: int = PARAM_P, q: int = PARAM_Q, g: int = PARAM_G) -> bool:
@@ -136,9 +138,6 @@ def DSA_verify(message: bytes, signature: Tuple[int, int], public_key: int,
         
     Returns:
         bool: True si la signature est valide
-        
-    Raises:
-        ValueError: Si les paramètres, la signature ou la clé sont invalides
     """
     if not validate_params():
         raise ValueError("Paramètres DSA invalides")
@@ -150,11 +149,11 @@ def DSA_verify(message: bytes, signature: Tuple[int, int], public_key: int,
     if not 0 < public_key < p:
         raise ValueError("Clé publique invalide")
     
+    # Calcule le hash du message et le réduit modulo q
+    h = H(message) % q
+    
     # Calcule w = s^(-1) mod q
     w = mod_inv(s, q)
-    
-    # Calcule le hash du message
-    h = H(message)
     
     # Calcule u1 = hw mod q
     u1 = (h * w) % q
