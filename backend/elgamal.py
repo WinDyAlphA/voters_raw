@@ -52,41 +52,35 @@ def EG_generate_keys(p: int = PARAM_P, g: int = PARAM_G) -> Tuple[int, int]:
     
     return private_key, public_key
 
-def EGM_encrypt(message: int, public_key: int, p: int = PARAM_P, g: int = PARAM_G) -> Tuple[int, int]:
+def EG_encrypt(message: int, public_key: int, p: int = PARAM_P, g: int = PARAM_G) -> Tuple[int, int]:
     """
-    Chiffre un message avec ElGamal (version multiplicative)
+    Chiffre un message avec ElGamal (version multiplicative générale)
     
     Args:
-        message: Le message à chiffrer (doit être < p)
+        message: Le message à chiffrer
         public_key: La clé publique du destinataire
         p: Le module premier
         g: Le générateur du groupe
         
     Returns:
-        Tuple[int, int]: (c1, c2) le texte chiffré
-        
-    Raises:
-        ValueError: Si les paramètres ou le message sont invalides
+        Tuple[int, int]: (r, c) le texte chiffré
     """
     if not validate_params():
         raise ValueError("Paramètres du groupe invalides")
     
-    if message not in (0, 1):
+    if not 0 < message < p:
         raise ValueError("Message invalide")
-    
-    # Encode le message : 0 -> 1, 1 -> g
-    encoded = 1 if message == 0 else g
     
     # Génère un nombre aléatoire k
     k = randbelow(PARAM_Q-2) + 1
     
-    # Calcule c1 = g^k mod p
-    c1 = pow(g, k, p)
+    # Calcule r = g^k mod p
+    r = pow(g, k, p)
     
-    # Calcule c2 = m * y^k mod p
-    c2 = (encoded * pow(public_key, k, p)) % p
+    # Calcule c = m * y^k mod p
+    c = (message * pow(public_key, k, p)) % p
     
-    return c1, c2
+    return r, c
 
 def EG_decrypt(private_key: int, c1: int, c2: int, p: int = PARAM_P) -> int:
     """
@@ -203,3 +197,30 @@ def EGA_decrypt(private_key: int, c1: int, c2: int, p: int = PARAM_P, g: int = P
         raise ValueError("Déchiffrement invalide")
     
     return message
+
+def EGM_decrypt(private_key: int, c1: int, c2: int, p: int = PARAM_P) -> int:
+    """
+    Déchiffre un message avec ElGamal (version multiplicative classique)
+    
+    Args:
+        private_key: La clé privée
+        c1, c2: Le texte chiffré
+        p: Le module premier
+        
+    Returns:
+        int: Le message déchiffré
+    """
+    if not validate_params():
+        raise ValueError("Paramètres du groupe invalides")
+    
+    if not 0 < private_key < PARAM_Q:
+        raise ValueError("Clé privée invalide")
+    
+    # Calcule s = c1^x mod p
+    s = pow(c1, private_key, p)
+    
+    # Calcule m = c2 * s^(-1) mod p
+    s_inv = mod_inv(s, p)
+    m = (c2 * s_inv) % p
+    
+    return m
