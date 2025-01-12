@@ -14,10 +14,12 @@ from elgamal import (
     PARAM_P, PARAM_Q, PARAM_G
 )
 from ecdsa import (
-    ECDSA_generate_keys, ECDSA_sign, ECDSA_verify
+    ECDSA_generate_keys, ECDSA_sign, ECDSA_verify,
+    ORDER as ECDSA_ORDER
 )
 from dsa import (
-    DSA_generate_keys, DSA_sign, DSA_verify
+    DSA_generate_keys, DSA_sign, DSA_verify,
+    PARAM_Q as DSA_ORDER
 )
 
 NUM_VOTERS = 10
@@ -205,5 +207,65 @@ def run_election(use_ec: bool = True):
     
     return results 
 
-results_ec = run_election(use_ec=True)
-results_ec = run_election(use_ec=False)
+def test_signatures():
+    """
+    Teste le système de signatures (ECDSA et DSA)
+    """
+    print("\nTest des signatures:")
+    print("-" * 50)
+    
+    # Test avec ECDSA
+    print("Test ECDSA:")
+    system_ec = VotingSystem(use_ec=True)
+    message = b"Test message for ECDSA"
+    
+    # Test pour chaque votant
+    for voter_id in range(3):  # On teste avec 3 votants pour l'exemple
+        # Crée et signe un vote
+        vote = system_ec.create_vote(0)  # Vote pour le candidat 0
+        ballot = system_ec.encrypt_vote(vote, voter_id)
+        
+        # Vérifie la signature
+        is_valid = system_ec.verify_ballot(ballot)
+        print(f"Votant {voter_id}: Signature {'valide' if is_valid else 'invalide'}")
+        
+        # Test avec une signature invalide
+        invalid_ballot = Ballot(
+            ballot.encrypted_votes,
+            (ballot.signature[0], (ballot.signature[1] + 1) % ECDSA_ORDER),
+            ballot.voter_id
+        )
+        is_valid = system_ec.verify_ballot(invalid_ballot)
+        print(f"Votant {voter_id} (signature invalide): {'non détectée!' if is_valid else 'correctement rejetée'}")
+    
+    # Test avec DSA
+    print("\nTest DSA:")
+    system_dsa = VotingSystem(use_ec=False)
+    message = b"Test message for DSA"
+    
+    # Test pour chaque votant
+    for voter_id in range(3):
+        # Crée et signe un vote
+        vote = system_dsa.create_vote(0)
+        ballot = system_dsa.encrypt_vote(vote, voter_id)
+        
+        # Vérifie la signature
+        is_valid = system_dsa.verify_ballot(ballot)
+        print(f"Votant {voter_id}: Signature {'valide' if is_valid else 'invalide'}")
+        
+        # Test avec une signature invalide
+        invalid_ballot = Ballot(
+            ballot.encrypted_votes,
+            (ballot.signature[0], (ballot.signature[1] + 1) % DSA_ORDER),
+            ballot.voter_id
+        )
+        is_valid = system_dsa.verify_ballot(invalid_ballot)
+        print(f"Votant {voter_id} (signature invalide): {'non détectée!' if is_valid else 'correctement rejetée'}")
+
+if __name__ == "__main__":
+    # Tests existants
+    results_ec = run_election(use_ec=True)
+    results_classic = run_election(use_ec=False)
+    
+    # Ajout des tests de signature
+    test_signatures()
