@@ -2,9 +2,15 @@
 
 ## Introduction
 
-Ce projet, réalisé dans le cadre du cours de cryptographie appliquée, implémente un système de vote électronique sécurisé pour une élection avec 10 votants et 5 candidats. Le système utilise des techniques cryptographiques avancées pour garantir :
+Ce projet, réalisé dans le cadre du cours de cryptographie appliqué, implémente un système de vote électronique sécurisé pour une élection avec 10 votants et 5 candidats. Le système utilise des techniques cryptographiques avancées pour garantir :
 - La confidentialité des votes via le chiffrement homomorphique
 - L'éligibilité des votants via les signatures numériques
+
+## Equipe
+
+ - Noah Heraud
+ - Matthias Pelle 
+ - Kilyan Tompouce
 
 ## Spécifications du Système
 
