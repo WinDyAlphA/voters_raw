@@ -1,7 +1,8 @@
 from crypto_utils.algebra import mod_inv
-from Crypto.Hash import SHA256
+from Crypto.Hash import SHA256, HMAC
 from secrets import randbelow
 from typing import Tuple
+from crypto_utils.algebra import int_to_bytes
 
 ## parameters from MODP Group 24 -- Extracted from RFC 5114
 PARAM_P = 0x87A8E61DB4B6663CFFBBD19C651959998CEEF608660DD0F25D2CEED4435E3B00E00DF8F1D61957D4FAF7DF4561B2AA3016C3D91134096FAA3BF4296D830E9A7C209E0C6497517ABD5A8A9D306BCF67ED91F9E6725B4758C022E0B1EF4275BF7B6C5BFC11D45F9088B941F54EB1E59BB8BC39A0BF12307F5C4FDB70C581B23F76B63ACAE1CAA6B7902D52526735488A0EF13C6D9A51BFA4AB3AD8347796524D8EF6A167B5A41825D967E144E5140564251CCACB83E6B486F6B3CA3F7971506026C0B857F689962856DED4010ABD0BE621C3A3960A54E710C375F26375D7014103A4B54330C198AF126116D2276E11715F693877FAD7EF09CADB094AE91E1A1597
@@ -39,9 +40,42 @@ def H(message: bytes) -> int:
     h = SHA256.new(message)
     return int(h.hexdigest(), 16)
 
+def bits2int(bits: bytes, qlen: int) -> int:
+    """
+    Convertit une séquence d'octets en entier
+    
+    Args:
+        bits: Les octets à convertir
+        qlen: La taille en bits de l'ordre du groupe
+        
+    Returns:
+        int: L'entier résultant
+    """
+    ret = int.from_bytes(bits, byteorder='big')
+    # Tronque si nécessaire
+    if len(bits) * 8 > qlen:
+        ret = ret >> (len(bits) * 8 - qlen)
+    return ret
+
+def bits2octets(bits: bytes, q: int, qlen: int) -> bytes:
+    """
+    Convertit des bits en octets modulo q
+    
+    Args:
+        bits: Les bits à convertir
+        q: Le module
+        qlen: La taille en bits de q
+        
+    Returns:
+        bytes: Les octets résultants
+    """
+    z1 = bits2int(bits, qlen)
+    z2 = z1 % q
+    return int_to_bytes(z2)
+
 def DSA_generate_nonce(private_key: int, message: bytes, q: int = PARAM_Q) -> int:
     """
-    Génère un nonce k pour DSA de manière déterministe (RFC 6979)
+    Génère un nonce k pour DSA de manière déterministe selon RFC 6979
     
     Args:
         private_key: La clé privée
@@ -51,10 +85,51 @@ def DSA_generate_nonce(private_key: int, message: bytes, q: int = PARAM_Q) -> in
     Returns:
         int: Le nonce k
     """
-    # En production, il faudrait implémenter RFC 6979
-    # Cette implémentation n'est pas recommandée pour la production
-    k = randbelow(q-2) + 1
-    return k
+    # 1. Calcule h1 = H(message)
+    h1 = H(message)
+    
+    # Calcule la taille en bits de q
+    qlen = q.bit_length()
+    
+    # 2. Convertit la clé privée en octets
+    x = int_to_bytes(private_key)
+    
+    # 3. Convertit h1 en octets
+    h1_bytes = int_to_bytes(h1)
+    
+    # 4. Initialise
+    v = b'\x01' * 32  # SHA256 produit 32 octets
+    k = b'\x00' * 32
+    
+    # 5. Calcule K = HMAC_K(V || 0x00 || x || h1)
+    k = HMAC.new(k, v + b'\x00' + x + h1_bytes, SHA256).digest()
+    
+    # 6. Calcule V = HMAC_K(V)
+    v = HMAC.new(k, v, SHA256).digest()
+    
+    # 7. Calcule K = HMAC_K(V || 0x01 || x || h1)
+    k = HMAC.new(k, v + b'\x01' + x + h1_bytes, SHA256).digest()
+    
+    # 8. Calcule V = HMAC_K(V)
+    v = HMAC.new(k, v, SHA256).digest()
+    
+    # 9. Génère T
+    while True:
+        t = b''
+        while len(t) * 8 < qlen:
+            v = HMAC.new(k, v, SHA256).digest()
+            t += v
+            
+        # Convertit T en un nonce
+        nonce = bits2int(t, qlen)
+        
+        # Vérifie que le nonce est valide
+        if 0 < nonce < q:
+            return nonce
+            
+        # Si non valide, continue avec K = HMAC_K(V || 0x00)
+        k = HMAC.new(k, v + b'\x00', SHA256).digest()
+        v = HMAC.new(k, v, SHA256).digest()
 
 def DSA_generate_keys(p: int = PARAM_P, q: int = PARAM_Q, g: int = PARAM_G) -> Tuple[int, int]:
     """
@@ -82,48 +157,32 @@ def DSA_generate_keys(p: int = PARAM_P, q: int = PARAM_Q, g: int = PARAM_G) -> T
     
     return private_key, public_key
 
-def DSA_sign(message: bytes, private_key: int, p: int = PARAM_P, q: int = PARAM_Q, g: int = PARAM_G) -> Tuple[int, int]:
+def DSA_sign(message: bytes, private_key: int) -> Tuple[int, int]:
     """
     Signe un message avec DSA
-    
-    Args:
-        message: Le message à signer
-        private_key: La clé privée x
-        p, q, g: Les paramètres DSA
-        
-    Returns:
-        Tuple[int, int]: La signature (r, s)
     """
-    if not validate_params():
-        raise ValueError("Paramètres DSA invalides")
-    
-    if not 0 < private_key < q:
+    if not 0 < private_key < PARAM_Q:
         raise ValueError("Clé privée invalide")
     
     # Calcule le hash du message
-    h = H(message) % q
+    h = H(message)
     
-    while True:  # Boucle jusqu'à obtenir r ≠ 0 et s ≠ 0
-        # 1. Choose random k ∈ {1, q-1}
-        k = DSA_generate_nonce(private_key, message, q)
+    while True:
+        # Génère un nonce k de manière déterministe
+        k = DSA_generate_nonce(private_key, message)
         
-        # 2. Compute r = (g^k mod p) mod q
-        r = pow(g, k, p) % q
+        # Calcule r = (g^k mod p) mod q
+        r = pow(PARAM_G, k, PARAM_P) % PARAM_Q
         if r == 0:
-            continue  # Si r = 0, recommence avec un nouveau k
-        
-        # 3. Compute s = (H(m) + x·r)/k mod q
-        try:
-            k_inv = mod_inv(k, q)
-            s = (k_inv * ((h + private_key * r) % q)) % q
-            if s == 0:
-                continue  # Si s = 0, recommence avec un nouveau k
-            
-            return r, s
-            
-        except Exception:
-            # Si k_inv n'existe pas, recommence avec un nouveau k
             continue
+        
+        # Calcule s = k^(-1)(h + x*r) mod q
+        k_inv = mod_inv(k, PARAM_Q)
+        s = (k_inv * (h + private_key * r)) % PARAM_Q
+        if s == 0:
+            continue
+            
+        return r, s
 
 def DSA_verify(message: bytes, signature: Tuple[int, int], public_key: int, 
                p: int = PARAM_P, q: int = PARAM_Q, g: int = PARAM_G) -> bool:

@@ -1,7 +1,7 @@
 from crypto_utils.rfc7748 import x25519, add, computeVcoordinate, mult
-from Crypto.Hash import SHA256
+from Crypto.Hash import SHA256, HMAC
 from secrets import randbelow
-from crypto_utils.algebra import mod_inv
+from crypto_utils.algebra import mod_inv, int_to_bytes
 from typing import Tuple
 
 # Paramètres de la courbe
@@ -35,9 +35,42 @@ def H(message: bytes) -> int:
     h = SHA256.new(message)
     return int(h.hexdigest(), 16)
 
+def bits2int(bits: bytes, qlen: int) -> int:
+    """
+    Convertit une séquence d'octets en entier
+    
+    Args:
+        bits: Les octets à convertir
+        qlen: La taille en bits de l'ordre du groupe
+        
+    Returns:
+        int: L'entier résultant
+    """
+    ret = int.from_bytes(bits, byteorder='big')
+    # Tronque si nécessaire
+    if len(bits) * 8 > qlen:
+        ret = ret >> (len(bits) * 8 - qlen)
+    return ret
+
+def bits2octets(bits: bytes, q: int, qlen: int) -> bytes:
+    """
+    Convertit des bits en octets modulo q
+    
+    Args:
+        bits: Les bits à convertir
+        q: Le module
+        qlen: La taille en bits de q
+        
+    Returns:
+        bytes: Les octets résultants
+    """
+    z1 = bits2int(bits, qlen)
+    z2 = z1 % q
+    return int_to_bytes(z2)
+
 def ECDSA_generate_nonce(private_key: int, message: bytes, order: int = ORDER) -> int:
     """
-    Génère un nonce k pour ECDSA de manière déterministe (RFC 6979)
+    Génère un nonce k pour ECDSA de manière déterministe selon RFC 6979
     
     Args:
         private_key: La clé privée
@@ -46,13 +79,52 @@ def ECDSA_generate_nonce(private_key: int, message: bytes, order: int = ORDER) -
         
     Returns:
         int: Le nonce k
-        
-    Note:
-        En production, utiliser RFC 6979 pour la génération déterministe du nonce
     """
-    # En production, implémenter RFC 6979
-    k = randbelow(order-2) + 1
-    return k
+    # 1. Calcule h1 = H(message)
+    h1 = H(message)
+    
+    # Calcule la taille en bits de l'ordre
+    qlen = order.bit_length()
+    
+    # 2. Convertit la clé privée en octets
+    x = int_to_bytes(private_key)
+    
+    # 3. Convertit h1 en octets
+    h1_bytes = int_to_bytes(h1)
+    
+    # 4. Initialise
+    v = b'\x01' * 32  # SHA256 produit 32 octets
+    k = b'\x00' * 32
+    
+    # 5. Calcule K = HMAC_K(V || 0x00 || x || h1)
+    k = HMAC.new(k, v + b'\x00' + x + h1_bytes, SHA256).digest()
+    
+    # 6. Calcule V = HMAC_K(V)
+    v = HMAC.new(k, v, SHA256).digest()
+    
+    # 7. Calcule K = HMAC_K(V || 0x01 || x || h1)
+    k = HMAC.new(k, v + b'\x01' + x + h1_bytes, SHA256).digest()
+    
+    # 8. Calcule V = HMAC_K(V)
+    v = HMAC.new(k, v, SHA256).digest()
+    
+    # 9. Génère T
+    while True:
+        t = b''
+        while len(t) * 8 < qlen:
+            v = HMAC.new(k, v, SHA256).digest()
+            t += v
+            
+        # Convertit T en un nonce
+        nonce = bits2int(t, qlen)
+        
+        # Vérifie que le nonce est valide
+        if 0 < nonce < order:
+            return nonce
+            
+        # Si non valide, continue avec K = HMAC_K(V || 0x00)
+        k = HMAC.new(k, v + b'\x00', SHA256).digest()
+        v = HMAC.new(k, v, SHA256).digest()
 
 def ECDSA_generate_keys(p: int = p) -> Tuple[int, Tuple[int, int]]:
     """
