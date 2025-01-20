@@ -87,7 +87,9 @@ class VotingSystem:
                 encrypted = ECEG_encrypt(vote, self.pub_key)
             else:
                 if self.use_multiplicative:
-                    encrypted = EGM_encrypt(vote, self.pub_key)
+                    # Encode 0 comme 1 et 1 comme g pour la version multiplicative
+                    encoded_vote = PARAM_G if vote == 1 else 1
+                    encrypted = EGM_encrypt(encoded_vote, self.pub_key)
                 else:
                     encrypted = EGA_encrypt(vote, self.pub_key)
             encrypted_votes.append(encrypted)

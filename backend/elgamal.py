@@ -52,7 +52,7 @@ def EG_generate_keys(p: int = PARAM_P, g: int = PARAM_G) -> Tuple[int, int]:
     
     return private_key, public_key
 
-def EG_encrypt(message: int, public_key: int, p: int = PARAM_P, g: int = PARAM_G) -> Tuple[int, int]:
+def EGM_encrypt(message: int, public_key: int, p: int = PARAM_P, g: int = PARAM_G) -> Tuple[int, int]:
     """
     Chiffre un message avec ElGamal (version multiplicative générale)
     

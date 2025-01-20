@@ -12,7 +12,7 @@ Quand on multiplie deux chiffrés (r1,c1) et (r2,c2) :
 C'est exactement la forme d'un chiffrement de (m1*m2) avec k = k1+k2 !
 """
 
-from elgamal import EG_generate_keys, EG_encrypt, EGM_decrypt, PARAM_P
+from elgamal import EG_generate_keys, EGM_encrypt, EGM_decrypt, PARAM_P
 from crypto_utils.algebra import int_to_bytes
 
 # Messages à chiffrer (en hexadécimal)
@@ -31,8 +31,8 @@ print(f"\nProduit attendu: {hex(expected_product)}")
 private_key, public_key = EG_generate_keys()
 
 # Chiffrement des messages
-r1, c1 = EG_encrypt(m1, public_key)
-r2, c2 = EG_encrypt(m2, public_key)
+r1, c1 = EGM_encrypt(m1, public_key)
+r2, c2 = EGM_encrypt(m2, public_key)
 
 print("\nChiffrés:")
 print(f"(r1, c1) = ({hex(r1)}, {hex(c1)})")
